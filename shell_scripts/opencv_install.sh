@@ -1,5 +1,5 @@
 #!/bin/bash
-
+source venv-orbslam3/bin/activate # uncomment if not using virtual environment
 ## install OpenCV with OpenCV_contrib
 cd ~
 mkdir thirdparty

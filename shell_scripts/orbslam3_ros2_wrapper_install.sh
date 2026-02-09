@@ -1,4 +1,5 @@
 #!/bin/bash
+source venv-orbslam3/bin/activate # uncomment if not using virtual environment
 
 #build the ros2 wrapper for orbslam3
 cd ~/ros2_ws/src/

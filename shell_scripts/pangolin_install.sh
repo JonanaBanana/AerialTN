@@ -1,6 +1,9 @@
 #!/bin/bash
 
+source venv-orbslam3/bin/activate # uncomment if not using virtual environment
+
 ## install pangolin
+
 cd ~
 mkdir thirdparty
 cd thirdparty/

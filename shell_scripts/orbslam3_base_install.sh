@@ -1,4 +1,5 @@
 #!/bin/bash
+source venv-orbslam3/bin/activate # uncomment if not using virtual environment
 
 #obslam 3 base installer
 cd ros2_ws/src/
