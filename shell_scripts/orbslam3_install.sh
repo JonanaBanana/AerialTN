@@ -1,6 +1,5 @@
 #!/bin/bash
-
-#obslam 3 base installer
+#obslam 3 installer
 cd ~/thirdparty
 wait
 
@@ -16,7 +15,7 @@ wait
 ./build.sh
 wait
 
-cd ros2_ws/src/
+cd ~/ros2_ws/src/
 
 git clone https://gitlab.com/akbedaka/orb_slam3_ros2.git orbslam3_ros2
 

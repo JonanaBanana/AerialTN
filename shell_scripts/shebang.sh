@@ -27,9 +27,11 @@ sudo apt-get install libgflags-dev -y
 sudo apt install libgoogle-glog-dev -y
 sudo apt-get install protobuf-compiler libprotobuf-dev -y
 
-#sudo apt install libeigen3-dev -y
+sudo apt install libeigen3-dev -y
 
 sudo apt install cmake -y
+sudo apt-get install ament-cmake -y
+
 
 sudo apt-get install libgtk-3-dev \
                      libgtk-2-dev -y
@@ -67,6 +69,15 @@ sudo apt install libogre-1.12-dev -y
 sudo apt-get install libatlas-base-dev libsuitesparse-dev -y
 
 sudo apt-get install freeglut3-dev libglew-dev -y
+
+sudo apt-get install libmetis-dev -y
+
+sudo apt install unzip -y
+
+sudo apt install ros-humble-vision-opencv -y
+
+sudo apt install ros-humble-message-filters -y
+
 
 
 mkdir thirdparty
@@ -121,25 +132,26 @@ cmake ..
 
 sudo make install -j $(nproc)
 
+# install pangolin
 cd ~/thirdparty/
 
 git clone --recursive https://github.com/stevenlovegrove/Pangolin.git
 
 cd Pangolin/
 
-sudo ./scripts/install_prerequisites.sh recommended
+sudo ./scripts/install_prerequisites.sh all
 
 cmake -B build
 
 cmake --build build
 
-cd build
+#cd build
 
-make -j16
+#make -j16
 
-sudo make install
+#sudo make install
 
-sudo ldconfig
+#sudo ldconfig
 
 ## install OpenCV with OpenCV_contrib
 cd ~/thirdparty/
