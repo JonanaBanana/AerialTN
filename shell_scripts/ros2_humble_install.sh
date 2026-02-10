@@ -5,7 +5,7 @@ locale  # check for UTF-8
 sudo apt update
 wait
 
-sudo apt install locales
+sudo apt install locales -y
 wait
 
 sudo locale-gen en_US en_US.UTF-8
@@ -20,7 +20,7 @@ wait
 locale  # verify settings
 wait
 
-sudo apt install software-properties-common
+sudo apt install software-properties-common -y
 wait
 
 sudo add-apt-repository universe
@@ -44,10 +44,10 @@ wait
 sudo apt update
 wait
 
-sudo apt upgrade
+sudo apt upgrade -y
 wait
 
-sudo apt install ros-humble-desktop
+sudo apt install ros-humble-desktop -y
 wait
 
 source /opt/ros/humble/setup.bash
@@ -56,5 +56,5 @@ wait
 echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 wait
 
-sudo apt install python3-colcon-common-extensions
+sudo apt install python3-colcon-common-extensions -y
 wait

@@ -72,21 +72,6 @@ sudo apt-get install freeglut3-dev libglew-dev -y
 mkdir thirdparty
 wait
 
-#install eigen 3.3.9 - IT SHOULD ALREADY HAVE BEEN INSTALLED
-#cd ~/thirdparty/
-
-#wget -O eigen-3.3.9.zip https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.zip
-
-#unzip eigen-3.3.9.zip
-
-#cd eigen-3.3.9/
-
-#mkdir build
-
-#cd build
-
-#cmake ../ && sudo make install -j $(nproc)
-
 
 #install ceres solver
 cd ~/thirdparty/
@@ -136,5 +121,137 @@ cmake ..
 
 sudo make install -j $(nproc)
 
+cd ~/thirdparty/
+
+git clone --recursive https://github.com/stevenlovegrove/Pangolin.git
+
+cd Pangolin/
+
+sudo ./scripts/install_prerequisites.sh recommended
+
+cmake -B build
+
+cmake --build build
+
+cd build
+
+make -j16
+
+sudo make install
+
+sudo ldconfig
+
+## install OpenCV with OpenCV_contrib
+cd ~/thirdparty/
+wait
+
+git clone https://github.com/opencv/opencv
+wait
+
+git -C opencv checkout 4.13.0
+wait
+
+git clone https://github.com/opencv/opencv_contrib
+wait
+
+git -C opencv_contrib checkout 4.13.0
+wait
+
+cd opencv/
+wait
+
+mkdir build
+wait
+
+cd build
+wait
+
+cmake -D CMAKE_BUILD_TYPE=RELEASE \
+          -D CMAKE_INSTALL_PREFIX=/usr/local \
+          -D INSTALL_C_EXAMPLES=OFF \
+          -D INSTALL_PYTHON_EXAMPLES=OFF \
+          -D ENABLE_FAST_MATH=ON \
+          -D BUILD_opencv_java=OFF \
+          -D BUILD_ZLIB=ON \
+          -D BUILD_TIFF=ON \
+          -D WITH_GTK=ON \
+          -D WITH_FFMPEG=ON \
+          -D WITH_1394=ON \
+          -D OPENCV_GENERATE_PKGCONFIG=ON \
+          -D OPENCV_PC_FILE_NAME=opencv4.pc \
+          -D OPENCV_ENABLE_NONFREE=ON \
+          -D WITH_GSTREAMER=ON \
+          -D WITH_V4L=ON \
+          -D WITH_QT=ON \
+          -D WITH_OPENGL=ON \
+          -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
+          -D BUILD_EXAMPLES=ON ..
+wait
+
+make -j $(nproc)
+
+wait
+
+sudo make install -j $(nproc)
 
 
+cd ~
+
+locale  # check for UTF-8
+
+sudo apt update
+wait
+
+sudo apt install locales -y
+wait
+
+sudo locale-gen en_US en_US.UTF-8
+wait
+
+sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+wait
+
+export LANG=en_US.UTF-8
+wait
+
+locale  # verify settings
+wait
+
+sudo apt install software-properties-common -y
+wait
+
+sudo add-apt-repository universe
+wait
+
+sudo apt update
+wait
+
+sudo apt install curl -y
+wait
+
+export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
+wait
+
+curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
+wait
+
+sudo dpkg -i /tmp/ros2-apt-source.deb
+wait
+
+sudo apt update
+wait
+
+sudo apt upgrade -y
+wait
+
+sudo apt install ros-humble-desktop -y
+wait
+
+source /opt/ros/humble/setup.bash
+wait
+
+echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+wait
+
+sudo apt install python3-colcon-common-extensions -y
+wait
