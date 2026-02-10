@@ -21,6 +21,8 @@ pip3 install setuptools wheel catkin_pkg
 pip3 install opencv-python
 pip3 install opencv-contrib-python
 
+sudo apt-get install build-essential
+
 sudo apt-get install libgflags-dev -y
 sudo apt install libgoogle-glog-dev -y
 sudo apt-get install protobuf-compiler libprotobuf-dev -y
@@ -70,6 +72,22 @@ sudo apt-get install freeglut3-dev libglew-dev -y
 mkdir thirdparty
 wait
 
+#install eigen 3.3.9 - IT SHOULD ALREADY HAVE BEEN INSTALLED
+#cd ~/thirdparty/
+
+#wget -O eigen-3.3.9.zip https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.zip
+
+#unzip eigen-3.3.9.zip
+
+#cd eigen-3.3.9/
+
+#mkdir build
+
+#cd build
+
+#cmake ../ && sudo make install -j $(nproc)
+
+
 #install ceres solver
 cd ~/thirdparty/
 wait
@@ -117,22 +135,6 @@ cd build
 cmake ..
 
 sudo make install -j $(nproc)
-
-#install eigen 3.3.9
-cd ~/thirdparty/
-
-wget -O eigen-3.3.9.zip https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.zip
-
-unzip eigen-3.3.9.zip
-
-cd eigen-3.3.9/
-
-mkdir build
-
-cd build
-
-cmake ../ && sudo make install -j $(nproc)
-
 
 
 
