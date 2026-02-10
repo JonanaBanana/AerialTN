@@ -1,8 +1,5 @@
 #!/bin/bash
 
-source venv-orbslam3/bin/activate # uncomment if not using virtual environment
-wait
-
 ## install pangolin
 
 cd ~
