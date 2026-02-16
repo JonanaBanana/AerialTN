@@ -83,6 +83,8 @@ sudo apt install ros-humble-vision-opencv -y
 
 sudo apt install ros-humble-message-filters -y
 
+sudo apt-get install ros-humble-image-view -y
+
 
 
 mkdir thirdparty

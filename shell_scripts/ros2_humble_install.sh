@@ -57,4 +57,6 @@ echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 wait
 
 sudo apt install python3-colcon-common-extensions -y
+sudo apt-get install ros-humble-rviz2 ros-humble-turtle-tf2-py ros-humble-tf2-ros ros-humble-tf2-tools -y
+sudo apt-get install ros-humble-usb-cam -y
 wait
