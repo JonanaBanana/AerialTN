@@ -79,7 +79,6 @@ cd ~/thirdparty/
 wait
 
 git clone --recursive https://github.com/ceres-solver/ceres-solver.git
-git clone --recursive https://github.com/ceres-solver/ceres-solver.git
 wait
 
 cd ceres-solver
