@@ -25,4 +25,4 @@ sudo rm -r ORBVoc.txt.tar.gz
 
 cd ~/ros2_ws/
 
-colcon build --packages-select orbslam3
+colcon build --symlink-install --packages-select orbslam3
