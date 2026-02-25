@@ -19,6 +19,10 @@ cd ~/ros2_ws/src/
 
 git clone https://github.com/JonanaBanana/ORB_SLAM3_ROS2.git orbslam3_ros2
 
-cd ..
+cd orbslam3_ros2/vocabulary/
+tar -xvf ORBVoc.txt.tar.gz
+sudo rm -r ORBVoc.txt.tar.gz
+
+cd ~/ros2_ws/
 
 colcon build --packages-select orbslam3
