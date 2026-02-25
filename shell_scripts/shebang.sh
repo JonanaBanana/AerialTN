@@ -28,8 +28,6 @@ sudo apt-get install libgflags-dev -y
 #sudo apt-get install protobuf-compiler libprotobuf-dev -y
 
 sudo apt install libeigen3-dev -y
-
-sudo apt install cmake -y
 sudo apt-get install ament-cmake -y
 
 sudo apt-get install libgtk2.0-dev -y
@@ -81,8 +79,10 @@ cd ~/thirdparty/
 wait
 
 git clone --recursive https://github.com/ceres-solver/ceres-solver.git
+git clone --recursive https://github.com/ceres-solver/ceres-solver.git
 wait
 
+cd ceres-solver
 cd ceres-solver
 wait
 
