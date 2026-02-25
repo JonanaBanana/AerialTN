@@ -17,15 +17,10 @@ sudo apt install python3-pip -y
 wait
 
 pip3 install setuptools wheel catkin_pkg
-#pip3 install opencv-python
-#pip3 install opencv-contrib-python
 
 sudo apt-get install build-essential
 
 sudo apt-get install libgflags-dev -y
-
-#sudo apt install libgoogle-glog-dev -y
-#sudo apt-get install protobuf-compiler libprotobuf-dev -y
 
 sudo apt install libeigen3-dev -y
 sudo apt-get install ament-cmake -y
@@ -39,22 +34,6 @@ sudo apt-get install libavcodec-dev \
                      libavutil-dev \
                      libswscale-dev\
                      libavdevice-dev -y
-
-#sudo apt-get install libgstreamer1.0-dev \
-#                libgstreamer-plugins-base1.0-dev \
-#                libgstreamer-plugins-bad1.0-dev \
-#                gstreamer1.0-plugins-base \
-#                gstreamer1.0-plugins-good \
-#                gstreamer1.0-plugins-bad \
-#                gstreamer1.0-plugins-ugly \
-#                gstreamer1.0-libav \
-#                gstreamer1.0-tools \
-#                gstreamer1.0-x \
-#                gstreamer1.0-alsa \
-#               gstreamer1.0-gl \
-#                gstreamer1.0-gtk3 \
-#                gstreamer1.0-qt5 \
-#                gstreamer1.0-pulseaudio -y
 
 sudo apt-get install libblas-dev liblapack-dev -y
 
@@ -81,7 +60,6 @@ wait
 git clone --recursive https://github.com/ceres-solver/ceres-solver.git
 wait
 
-cd ceres-solver
 cd ceres-solver
 wait
 
@@ -137,65 +115,6 @@ cd build
 make -j8
 
 sudo make install
-
-## install OpenCV with OpenCV_contrib
-### DO NOT BUILD OPENCV FROM SOURCE. IT CAUSES ISSUES WITH ORBSLAM3
-
-#cd ~/thirdparty/
-#wait
-
-#git clone https://github.com/opencv/opencv
-#wait
-
-#git -C opencv checkout 4.13.0
-#wait
-
-#git clone https://github.com/opencv/opencv_contrib
-#wait
-
-#git -C opencv_contrib checkout 4.13.0
-#wait
-
-#cd opencv/
-#wait
-
-#mkdir build
-#wait
-
-#cd build
-#wait
-
-#cmake -D CMAKE_BUILD_TYPE=RELEASE \
-#          -D CMAKE_INSTALL_PREFIX=/usr/local \
-#          -D BUILD_opencv_python3=ON \
-#          -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
-#          -D INSTALL_C_EXAMPLES=OFF \
-#          -D INSTALL_PYTHON_EXAMPLES=OFF \
-#          -D ENABLE_FAST_MATH=ON \
-#          -D BUILD_opencv_java=OFF \
-#          -D BUILD_ZLIB=ON \
-#          -D BUILD_TIFF=ON \
-#          -D WITH_GTK=ON \
-#          -D WITH_GTK3=ON \
-#          -D WITH_GTK_2_X=OFF \
-#          -D WITH_FFMPEG=ON \
-#          -D WITH_1394=ON \
-#          -D OPENCV_GENERATE_PKGCONFIG=ON \
-#          -D OPENCV_PC_FILE_NAME=opencv4.pc \
-#          -D OPENCV_ENABLE_NONFREE=ON \
-#          -D WITH_GSTREAMER=ON \
-#          -D WITH_V4L=ON \
-#          -D WITH_QT=ON \
-#          -D WITH_OPENGL=ON \
-#          -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
-#          -D BUILD_EXAMPLES=OFF ..
-#wait
-
-#make -j $(nproc)
-
-#wait
-
-#sudo make install -j $(nproc)
 
 cd ~
 
