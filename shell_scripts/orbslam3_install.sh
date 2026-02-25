@@ -17,8 +17,8 @@ wait
 
 cd ~/ros2_ws/src/
 
-git clone https://gitlab.com/akbedaka/orb_slam3_ros2.git orbslam3_ros2
+git clone https://github.com/JonanaBanana/ORB_SLAM3_ROS2.git orbslam3_ros2
 
 cd ..
 
-colcon build --symlink-install --packages-select orbslam3
+colcon build --packages-select orbslam3
