@@ -37,10 +37,6 @@ sudo apt-get install libavcodec-dev \
 
 sudo apt-get install libblas-dev liblapack-dev -y
 
-sudo apt-get install libopenjpip-viewer libopenjpip-server -y
-
-sudo apt install libogre-1.12-dev -y
-
 sudo apt-get install libatlas-base-dev libsuitesparse-dev -y
 
 sudo apt-get install freeglut3-dev libglew-dev -y
