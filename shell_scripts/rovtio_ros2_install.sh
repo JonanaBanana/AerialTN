@@ -4,10 +4,8 @@ cd ~/ros2_ws/src/
 
 git clone https://github.com/JonanaBanana/rovtio_ros2.git
 
-cd rovtio_ros2/
+git clone https://github.com/JonanaBanana/rovtio_interfaces_ros2.git
 
-git submodule update --init --recursive
+cd ..
 
-cd ~/ros2_ws/
-
-colcon build --symlink-install
+colcon build --packages-select rovtio rovtio_interfaces_ros2
