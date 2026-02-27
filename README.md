@@ -13,7 +13,7 @@ To allow execution of the shell scripts run:
 ```bash
 # Enable execution of the shell scripts
 cd /path/to/ros2_ws/src/AerialTN/shell_scripts
-chmod +x shebang.sh ros2_humble_install.sh orbslam3_install.sh vins_multi_install.sh rovtio_ros2_install.sh
+chmod +x shebang.sh ros2_humble_install.sh orbslam3_install.sh vins_multi_install.sh rovtio_install.sh
 ```
 
 On a clean system run the scripts in the following order:
@@ -65,7 +65,7 @@ cd /path/to/ros2_ws/src/AerialTN/shell_scripts
 # ROVTIO IS POSSIBLY NOT FUNCTIONAL
 # Install ROVTIO and its ros2_wrapper
 cd /path/to/ros2_ws/src/AerialTN/shell_scripts
-./rovtio_ros2_install.sh
+./rovtio_install.sh
 ```
 
 ## Testing
