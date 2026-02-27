@@ -76,7 +76,7 @@ To test ORBSLAM3's core module you can download the euroc machine hall dataset a
 
 ```bash
 # Test ORBSLAM3 core (without ros2 wrapping)
-cd ~/thirdparty/ORBSLAM3/Examples/
+cd ~/thirdparty/ORB_SLAM3/Examples/
 ./Monocular/mono_euroc ../Vocabulary/ORBvoc.txt ./Monocular/EuRoC.yaml ~/datasets/MH_01_easy ./Monocular/EuRoC_TimeStamps/MH01.txt
 ```
 
