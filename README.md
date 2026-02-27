@@ -62,7 +62,7 @@ cd /path/to/ros2_ws/src/AerialTN/shell_scripts
 ```
 
 ```bash
-# ROVTIO IS NOT FUNCTIONAL FOR ROS2 YET, DO NOT INSTALL
+# ROVTIO IS POSSIBLY NOT FUNCTIONAL
 # Install ROVTIO and its ros2_wrapper
 cd /path/to/ros2_ws/src/AerialTN/shell_scripts
 ./rovtio_ros2_install.sh
@@ -103,3 +103,16 @@ ros2 launch vins_multi_ros2 vins_estimator.launch.py
 ```
 
 If the terminal hangs at the line _vins_multi_ros2 initialized, waiting for data..._ then the package should be working
+
+### ROVTIO
+
+To test ROVTIO simply source the workspace and run the sample launch file.
+
+```bash
+# Test ROVTIO ros2 wrapper
+cd ~/ros2_ws/
+source install/setup.bash
+ros2 launch rovtio voxl_rovtio_node_launch.yaml
+```
+
+If the terminal hangs after the line _Tests Complete_ then the package should be working
