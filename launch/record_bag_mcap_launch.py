@@ -4,10 +4,12 @@ from launch.substitutions import LaunchConfiguration
 import os
 from datetime import datetime
 
+
+## MCAP compression allows for similar compression as standard ros2 bag zstd compression, but the bagfiles can be played as is and requires no mamual uncompression.
 def generate_launch_description():
 
     # Timestamped output folder
-    bag_name = 'voxl_bag_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    bag_name = 'voxlbag_mcap_' + datetime.now().strftime('%Y%m%d_%H%M%S')
     output_dir = os.path.join('/bagfiles', bag_name)
 
     topics = [
