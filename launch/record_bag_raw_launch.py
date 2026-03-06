@@ -12,7 +12,7 @@ def generate_launch_description():
 
     topics = [
         '/ircam',
-        '/low_light_down_gray',
+        '/low_light_down_grey',
         '/tracking_down',
         '/tracking_front',
         '/hires_front_small_grey',
