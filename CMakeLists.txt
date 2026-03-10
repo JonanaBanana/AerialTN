@@ -21,13 +21,13 @@ set(IR_COMP "ir_v4l2_component")
 set(IR_NODE "ircam_node")
 
 # Shared library (composable component)
-add_library(IR_COMP SHARED
+add_library(${IR_COMP} SHARED
   src/v4l2_capture.cpp
   src/ircam_node.cpp
   src/ircam_component.cpp  
 )
 
-target_include_directories(IR_COMP PUBLIC
+target_include_directories(${IR_COMP} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>  
 )
@@ -40,23 +40,23 @@ ament_target_dependencies(IR_COMP
 )
 
 # Register the component so "ros2 component load" can find it
-rclcpp_components_register_node(IR_COMP
+rclcpp_components_register_node(${IR_COMP}
   PLUGIN "ir_v4l2_camera::IrCameraComponent"
   EXECUTABLE ir_camera_component_node
 )
 
 # Standalon executable (no composition)
-add_executable(IR_NODE
+add_executable(${IR_NODE}
   src/v4l2_capture.cpp
   src/ircam_node.cpp
   src/ircam_exec.cpp
 )
 
-target_include_directories(IR_NODE
+target_include_directories(${IR_NODE}
   include
 )
 
-ament_target_dependencies(IR_NODE
+ament_target_dependencies(${IR_NODE}
   rclcpp
   sensor_msgs
   std_msgs
@@ -64,19 +64,19 @@ ament_target_dependencies(IR_NODE
 
 # Install
 install(
-  TARGETS IR_COMP # composable
+  TARGETS ${IR_COMP} # composable
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
 
 install(
-  TARGETS IR_NODE # standalone
+  TARGETS ${IR_NODE} # standalone
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(
-  DIRECTORY /include
+  DIRECTORY include/
   DESTINATION include
 )
 
