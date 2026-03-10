@@ -22,9 +22,9 @@ set(IR_NODE "ircam_node")
 
 # Shared library (composable component)
 add_library(${IR_COMP} SHARED
-  src/v4l2_capture.cpp
-  src/ircam_node.cpp
-  src/ircam_component.cpp  
+  src/ircam/v4l2_capture.cpp
+  src/ircam/ircam_node.cpp
+  src/ircam/ircam_component.cpp  
 )
 
 target_include_directories(${IR_COMP} PUBLIC
@@ -47,12 +47,12 @@ rclcpp_components_register_node(${IR_COMP}
 
 # Standalon executable (no composition)
 add_executable(${IR_NODE}
-  src/v4l2_capture.cpp
-  src/ircam_node.cpp
-  src/ircam_exec.cpp
+  src/ircam/v4l2_capture.cpp
+  src/ircam/ircam_node.cpp
+  src/ircam/ircam_exec.cpp
 )
 
-target_include_directories(${IR_NODE}
+target_include_directories(${IR_NODE} PUBLIC
   include
 )
 
