@@ -17,8 +17,8 @@ find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
-set(IR_COMP ir_v4l2_component)
-set(IR_NODE ircam_node)
+set(IR_COMP "ir_v4l2_component")
+set(IR_NODE "ircam_node")
 
 # Shared library (composable component)
 add_library(IR_COMP SHARED
