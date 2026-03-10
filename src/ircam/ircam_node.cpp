@@ -17,7 +17,8 @@ IrCameraNode::IrCameraNode(const rclcpp::NodeOptions& options) : Node("ir_v4l2_c
     read_params();
 
     // auto qos = rclcpp::QoS(queue_depth_).reliability(rclcpp::ReliabilityPolicy::BestEffort).durability(rclcpp::DurabilityPolicy::Volatile);
-    auto qos = rclcpp::QoS(queue_depth_);
+    // auto qos = rclcpp::QoS(queue_depth_);
+    auto qos = rclcpp::QoS(10);
 
     image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("ircam_test_topic", qos);
 

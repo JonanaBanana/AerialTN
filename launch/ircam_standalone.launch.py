@@ -11,7 +11,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('params_file', default_value=default_params),
-        DeclareLaunchArgument('device', default_value='/dev/video0'),
+        DeclareLaunchArgument('device', default_value='/dev/video3'),
         DeclareLaunchArgument('encoding', default_value='yuyv'),
         DeclareLaunchArgument('v4l2_buffers', default_value='8'),
 
