@@ -7,6 +7,14 @@
  <license>Apache License</license>
 
  <buildtool_depend>ament_cmake</buildtool_depend>
+ 
+ <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <build_depend>libavcodec-dev</build_depend>
+  <build_depend>libavutil-dev</build_depend>
+  <build_depend>libswscale-dev</build_depend>
 
  <depend>rclcpp</depend>
  <depend>rclcpp_components</depend>
