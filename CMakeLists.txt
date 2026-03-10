@@ -13,7 +13,6 @@ endif()
 # ROS2 dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-<<<<<<< HEAD
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -80,31 +79,6 @@ install(
   DIRECTORY /include
   DESTINATION include
 )
-=======
-find_package(sensor_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
-
-# FFmpeg via pkg-config
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
-  libavcodec
-  libavutil
-  libswscale)
-
-# Build the node
-add_executable(voxl_decoder src/voxl_decoder.cpp)
-
-ament_target_dependencies(voxl_decoder
-  rclcpp
-  sensor_msgs
-  std_msgs)
-
-target_link_libraries(voxl_decoder
-  PkgConfig::LIBAV)
-
-install(TARGETS voxl_decoder
-DESTINATION lib/${PROJECT_NAME})
->>>>>>> ebc48cfb68b3e0cd6005849638fc9a7ccfe1f9b6
 
 install(DIRECTORY
   launch
