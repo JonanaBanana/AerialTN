@@ -32,7 +32,7 @@ target_include_directories(${IR_COMP} PUBLIC
   $<INSTALL_INTERFACE:include>  
 )
 
-ament_target_dependencies(IR_COMP
+ament_target_dependencies(${IR_COMP}
   rclcpp
   rclcpp_components
   sensor_msgs
