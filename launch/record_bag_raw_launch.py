@@ -7,7 +7,7 @@ from datetime import datetime
 def generate_launch_description():
 
     # Timestamped output folder
-    bag_name = 'voxlbag_raw_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    bag_name = 'voxlbag_raw_' + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     output_dir = os.path.join('/bagfiles', bag_name)
 
     topics = [
