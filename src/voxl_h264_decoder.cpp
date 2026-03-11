@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include <rmw/qos_profiles.h>
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -75,19 +77,22 @@ public:
         // ---- ROS setup ---------------------------------------------------
         pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 
-        // Match voxl-mpa-to-ros2's publisher QoS exactly — it publishes with
-        // VOLATILE + BestEffort.  A Reliable subscriber is incompatible and
-        // silently receives nothing, which causes the startup race symptoms.
-        auto qos = rclcpp::QoS(30)
-            .reliability(rclcpp::ReliabilityPolicy::Reliable)
-            .durability(rclcpp::DurabilityPolicy::TransientLocal);
+        // BEST_EFFORT subscriber prevents retransmission backlog over WiFi.
+        // Compatible with the RELIABLE publisher on voxl-mpa-to-ros2.
+        // Uses rmw profile directly for compatibility with both Foxy and Humble.
+        rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
+        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
+        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+        qos_profile.depth              = 1;
+        auto qos = rclcpp::QoS(
+            rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
 
         sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
             in_topic, qos,
             std::bind(&VoxlH264Decoder::callback, this, std::placeholders::_1));
 
-        // Watchdog: fires once after 5s to catch the case where the decoder
-        // node started after voxl-mpa-to-ros2 and missed the SPS+PPS packet.
+        // Watchdog: fires once after 5s. If packets arrived but nothing decoded,
+        // something is wrong with the stream or codec setup.
         watchdog_timer_ = create_wall_timer(
             std::chrono::seconds(5),
             std::bind(&VoxlH264Decoder::watchdog, this));
@@ -113,14 +118,25 @@ private:
             return;
         }
 
-        // Cache the SPS+PPS parameter set packet so it can be replayed after
-        // any decoder flush.  Without this, H264 fails with "non-existing PPS
-        // 0 referenced" after a flush because VOXL only sends SPS+PPS once at
-        // stream startup — identical problem to HEVC's "PPS id out of range".
+        // Cache any packet containing SPS/PPS so it can be replayed after a
+        // flush.  VOXL only sends SPS+PPS once at startup so without caching,
+        // any flush permanently breaks decoding.
         if (contains_parameter_sets(msg->data)) {
             param_set_cache_ = msg->data;
+            needs_params_    = false;   // we now have what we need to decode
             RCLCPP_DEBUG(get_logger(),
                 "Cached %zu-byte SPS+PPS packet", param_set_cache_.size());
+        }
+
+        // If we are still waiting for SPS+PPS (at startup, or after a flush
+        // that found an empty cache) silently drop all other packets.
+        // Passing them to avcodec_send_packet only produces endless
+        // "non-existing PPS 0 referenced" spam with no hope of recovery.
+        // VOXL never resends SPS+PPS — to recover, restart voxl-mpa-to-ros2.
+        if (needs_params_) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                "Waiting for SPS+PPS — restart voxl-mpa-to-ros2 to recover");
+            return;
         }
 
         packets_received_++;
@@ -236,9 +252,13 @@ private:
         consecutive_errors_ = 0;
 
         if (param_set_cache_.empty()) {
+            // SPS+PPS was never seen — probably a startup race.
+            // Gate the callback until VOXL resends them (it won't without a
+            // restart), so we stop producing error spam.
+            needs_params_ = true;
             RCLCPP_WARN(get_logger(),
-                "Flushed decoder but no SPS+PPS cached yet — "
-                "stream will recover on next I-frame");
+                "Flushed decoder but no SPS+PPS cached — "
+                "restart voxl-mpa-to-ros2 to recover");
             return;
         }
 
@@ -355,6 +375,8 @@ private:
     std::vector<uint8_t> param_set_cache_;
 
     // Decoder state
+    bool needs_params_       {true};   // true until first SPS+PPS seen; also set
+                                       // after a flush that found an empty cache
     bool got_keyframe_       {false};
     int  consecutive_errors_ {0};
     int  packets_received_   {0};
