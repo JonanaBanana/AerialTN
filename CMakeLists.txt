@@ -23,18 +23,29 @@ pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
   libavutil
   libswscale)
 
-# Build the node
-add_executable(voxl_decoder src/voxl_decoder.cpp)
+# Build the h264 node
+add_executable(voxl_h264_decoder src/voxl_h264_decoder.cpp)
 
-ament_target_dependencies(voxl_decoder
+ament_target_dependencies(voxl_h264_decoder
   rclcpp
   sensor_msgs
   std_msgs)
 
-target_link_libraries(voxl_decoder
+target_link_libraries(voxl_h264_decoder
   PkgConfig::LIBAV)
 
-install(TARGETS voxl_decoder
+# Build the h265 node
+add_executable(voxl_h265_decoder src/voxl_h265_decoder.cpp)
+
+ament_target_dependencies(voxl_h265_decoder
+  rclcpp
+  sensor_msgs
+  std_msgs)
+
+target_link_libraries(voxl_h265_decoder
+  PkgConfig::LIBAV)
+
+install(TARGETS voxl_h264_decoder voxl_h265_decoder
 DESTINATION lib/${PROJECT_NAME})
 
 # Install launch files.
