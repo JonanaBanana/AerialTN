@@ -54,22 +54,23 @@ static thread_local bool g_ffmpeg_decode_error = false;
 
 static void ffmpeg_log_callback(void * /*avcl*/, int level, const char * fmt, va_list vl)
 {
+    // Gate on level before any string work — FFmpeg emits many INFO/DEBUG
+    // messages internally; we only care about warnings and above.
+    if (level > AV_LOG_WARNING) return;
+
     char buf[256];
     vsnprintf(buf, sizeof(buf), fmt, vl);
 
-    if (level <= AV_LOG_WARNING) {
-        if (strstr(buf, "Could not find ref")       ||
-            strstr(buf, "decode_slice_header error") ||
-            strstr(buf, "no frame!")                ||
-            strstr(buf, "PPS id out of range")      ||
-            strstr(buf, "non-existing PPS"))
-        {
-            g_ffmpeg_decode_error = true;
-            return;   // suppress — counted in stats, no need to print
-        }
+    if (strstr(buf, "Could not find ref")       ||
+        strstr(buf, "decode_slice_header error") ||
+        strstr(buf, "no frame!")                ||
+        strstr(buf, "PPS id out of range")      ||
+        strstr(buf, "non-existing PPS"))
+    {
+        g_ffmpeg_decode_error = true;
+        return;   // suppress — counted in stats, no need to print
     }
 
-    // Pass everything else through to the default handler.
     av_log_default_callback(nullptr, level, fmt, vl);
 }
 
@@ -82,9 +83,7 @@ public:
     : Node("voxl_hevc_decoder"),
       codec_ctx_(nullptr),
       sws_ctx_(nullptr),
-      frame_(nullptr),
-      frame_bgr_(nullptr),
-      bgr_buffer_size_(0)
+      frame_(nullptr)
     {
         declare_parameter("input_topic",  "/hires_small_encoded");
         declare_parameter("output_topic", "/hires_small_decoded");
@@ -117,12 +116,15 @@ public:
         // Promote concealed frames to flagged errors where possible.
         codec_ctx_->err_recognition |= AV_EF_CRCCHECK | AV_EF_BITSTREAM | AV_EF_BUFFER;
 
+        // Suppress FFmpeg INFO/DEBUG log traffic entirely — our callback only
+        // acts on WARNING and above, and FFmpeg is very chatty internally.
+        av_log_set_level(AV_LOG_WARNING);
+
         // Intercept FFmpeg log messages for corruption that decode_error_flags misses.
         av_log_set_callback(ffmpeg_log_callback);
 
-        frame_     = av_frame_alloc();
-        frame_bgr_ = av_frame_alloc();
-        if (!frame_ || !frame_bgr_)
+        frame_ = av_frame_alloc();
+        if (!frame_)
             throw std::runtime_error("av_frame_alloc failed");
 
         // ---- ROS setup ---------------------------------------------------
@@ -144,17 +146,17 @@ public:
 
         sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
             in_topic, qos,
-            std::bind(&VoxlHevcDecoder::callback, this, std::placeholders::_1));
+            [this](sensor_msgs::msg::CompressedImage::SharedPtr msg) {
+                callback(std::move(msg));
+            });
 
-        // Watchdog fires once after 5s to catch startup issues.
         watchdog_timer_ = create_wall_timer(
             std::chrono::seconds(5),
-            std::bind(&VoxlHevcDecoder::watchdog, this));
+            [this]() { watchdog(); });
 
-        // Periodic stats summary every 30s.
         stats_timer_ = create_wall_timer(
             std::chrono::seconds(30),
-            std::bind(&VoxlHevcDecoder::print_stats, this));
+            [this]() { print_stats(); });
 
         RCLCPP_INFO(get_logger(), "HEVC decoder started  |  %s → %s",
             in_topic.c_str(), out_topic.c_str());
@@ -164,28 +166,31 @@ public:
     {
         if (sws_ctx_)   sws_freeContext(sws_ctx_);
         if (frame_)     av_frame_free(&frame_);
-        if (frame_bgr_) av_frame_free(&frame_bgr_);
         if (codec_ctx_) avcodec_free_context(&codec_ctx_);
     }
 
 private:
     // -----------------------------------------------------------------------
-    void callback(const sensor_msgs::msg::CompressedImage::SharedPtr msg)
+    void callback(sensor_msgs::msg::CompressedImage::SharedPtr msg)
     {
-        const auto & fmt = msg->format;
-        if (fmt != "h265" && fmt != "H265" && fmt != "hevc" && fmt != "HEVC") {
-            RCLCPP_WARN_ONCE(get_logger(),
-                "Unexpected format '%s' — expected h265/hevc. "
-                "Check voxl-mpa-to-ros2 configuration.", fmt.c_str());
-            return;
+        // Format check: only run once, then skip on the hot path.
+        if (!format_confirmed_) {
+            const auto & fmt = msg->format;
+            if (fmt != "h265" && fmt != "H265" && fmt != "hevc" && fmt != "HEVC") {
+                RCLCPP_WARN_ONCE(get_logger(),
+                    "Unexpected format '%s' — expected h265/hevc. "
+                    "Check voxl-mpa-to-ros2 configuration.", fmt.c_str());
+                return;
+            }
+            format_confirmed_ = true;
         }
 
-        // Cache packets containing VPS/SPS/PPS so they can be replayed after
-        // a decoder flush.  VOXL sends parameter sets once at startup only.
-        // Packets that bundle VPS+SPS+PPS with an IDR are also cached — the
-        // IDR replay after a flush is drained immediately and is harmless.
-        if (contains_parameter_sets(msg->data))
-            param_set_cache_ = msg->data;
+        // Param set scan: only needed until the cache is filled.
+        // VPS+SPS+PPS arrives once at startup — skip the O(n) scan for every
+        // subsequent P/B-frame.
+        if (param_set_cache_.empty())
+            if (contains_parameter_sets(msg->data))
+                param_set_cache_ = msg->data;
 
         packets_received_++;
 
@@ -207,7 +212,8 @@ private:
             && gap_ms < avg_gap_ms_ * 0.5)
         {
             frames_dropped_++;
-            return;   // discard backlog packet silently
+            flush_and_restore_params();   // broken reference chain — wait for next I-frame
+            return;
         }
 
         // Clear the FFmpeg log error flag before each packet so it only
@@ -337,9 +343,6 @@ private:
     }
 
     // -----------------------------------------------------------------------
-    // Flush the decoder and replay cached VPS+SPS+PPS so it is immediately
-    // ready to decode the next IDR without erroring.
-    // -----------------------------------------------------------------------
     void flush_and_restore_params()
     {
         avcodec_flush_buffers(codec_ctx_);
@@ -356,11 +359,10 @@ private:
 
         if (avcodec_send_packet(codec_ctx_, &ps_pkt) < 0) return;
 
-        // Drain any frames produced by the parameter set replay.
-        AVFrame * tmp = av_frame_alloc();
-        while (tmp && avcodec_receive_frame(codec_ctx_, tmp) == 0)
-            av_frame_unref(tmp);
-        av_frame_free(&tmp);
+        // Drain any frames produced by the parameter set replay using the
+        // member frame_ — no heap allocation needed.
+        while (avcodec_receive_frame(codec_ctx_, frame_) == 0)
+            av_frame_unref(frame_);
     }
 
     // -----------------------------------------------------------------------
@@ -368,34 +370,34 @@ private:
     {
         const int w = frame_->width;
         const int h = frame_->height;
+        const int row_bytes = w * 3;
+        const size_t needed = static_cast<size_t>(h * row_bytes);
 
-        const int needed = av_image_get_buffer_size(AV_PIX_FMT_BGR24, w, h, 1);
-        if (bgr_buffer_size_ < needed) {
-            av_frame_unref(frame_bgr_);
-            frame_bgr_->format = AV_PIX_FMT_BGR24;
-            frame_bgr_->width  = w;
-            frame_bgr_->height = h;
-            if (av_frame_get_buffer(frame_bgr_, 1) < 0) {
-                RCLCPP_ERROR(get_logger(), "av_frame_get_buffer failed");
-                return;
-            }
-            bgr_buffer_size_ = needed;
-        }
+        // Grow output buffer only when frame size increases — no alloc per frame.
+        if (output_buffer_.size() < needed)
+            output_buffer_.resize(needed);
 
         sws_ctx_ = sws_getCachedContext(
             sws_ctx_,
             w, h, static_cast<AVPixelFormat>(frame_->format),
             w, h, AV_PIX_FMT_BGR24,
-            SWS_BILINEAR, nullptr, nullptr, nullptr);
+            SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
 
         if (!sws_ctx_) {
             RCLCPP_ERROR(get_logger(), "sws_getCachedContext failed");
             return;
         }
 
+        // Scale directly into output_buffer_ — eliminates intermediate AVFrame
+        // and row-by-row memcpy.
+        uint8_t * dst_data[4]     = {};
+        int       dst_linesize[4] = {};
+        av_image_fill_arrays(dst_data, dst_linesize,
+            output_buffer_.data(), AV_PIX_FMT_BGR24, w, h, 1);
+
         sws_scale(sws_ctx_,
-            frame_->data,     frame_->linesize,     0, h,
-            frame_bgr_->data, frame_bgr_->linesize);
+            frame_->data, frame_->linesize, 0, h,
+            dst_data,     dst_linesize);
 
         auto out            = sensor_msgs::msg::Image();
         out.header          = src_header;
@@ -404,27 +406,26 @@ private:
         out.width           = static_cast<uint32_t>(w);
         out.encoding        = "bgr8";
         out.is_bigendian    = false;
-        out.step            = static_cast<uint32_t>(w * 3);
-        out.data.resize(h * w * 3);
-
-        const int row_bytes = w * 3;
-        for (int row = 0; row < h; ++row)
-            std::memcpy(out.data.data() + row * row_bytes,
-                        frame_bgr_->data[0] + row * frame_bgr_->linesize[0],
-                        row_bytes);
+        out.step            = static_cast<uint32_t>(row_bytes);
+        out.data            = std::move(output_buffer_);
 
         pub_->publish(out);
+
+        output_buffer_ = std::move(out.data);   // reclaim buffer after publish
     }
 
     // ---- FFmpeg state ------------------------------------------------------
     AVCodecContext * codec_ctx_;
     SwsContext *     sws_ctx_;
-    AVFrame *        frame_;        // decoded YUV frame,   reused per callback
-    AVFrame *        frame_bgr_;    // converted BGR frame, reused per callback
-    int              bgr_buffer_size_;
+    AVFrame *        frame_;        // decoded YUV frame, reused per callback
+
+    // Persistent BGR output buffer — sws_scale writes directly into this,
+    // eliminating the intermediate AVFrame and row-by-row memcpy.
+    std::vector<uint8_t> output_buffer_;
 
     // ---- Decoder state -----------------------------------------------------
     bool got_keyframe_        {false};
+    bool format_confirmed_    {false};  // skip format string check after first packet
     int  consecutive_errors_  {0};
     int  consecutive_corrupt_ {0};
     int64_t last_recv_ns_     {0};      // steady_clock time of last packet

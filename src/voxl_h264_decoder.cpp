@@ -55,22 +55,23 @@ static thread_local bool g_ffmpeg_decode_error = false;
 
 static void ffmpeg_log_callback(void * /*avcl*/, int level, const char * fmt, va_list vl)
 {
+    // Gate on level before any string work — FFmpeg emits many INFO/DEBUG
+    // messages internally; we only care about warnings and above.
+    if (level > AV_LOG_WARNING) return;
+
     char buf[256];
     vsnprintf(buf, sizeof(buf), fmt, vl);
 
-    if (level <= AV_LOG_WARNING) {
-        if (strstr(buf, "non-existing PPS")         ||
-            strstr(buf, "decode_slice_header error") ||
-            strstr(buf, "no frame!")                ||
-            strstr(buf, "reference picture missing") ||
-            strstr(buf, "mmco: unref short failure"))
-        {
-            g_ffmpeg_decode_error = true;
-            return;   // suppress — counted in stats, no need to print
-        }
+    if (strstr(buf, "non-existing PPS")         ||
+        strstr(buf, "decode_slice_header error") ||
+        strstr(buf, "no frame!")                ||
+        strstr(buf, "reference picture missing") ||
+        strstr(buf, "mmco: unref short failure"))
+    {
+        g_ffmpeg_decode_error = true;
+        return;   // suppress — counted in stats, no need to print
     }
 
-    // Pass everything else through to the default handler.
     av_log_default_callback(nullptr, level, fmt, vl);
 }
 
@@ -114,7 +115,16 @@ public:
             throw std::runtime_error("avcodec_open2 failed");
 
         // Promote concealed frames to flagged errors where possible.
-        codec_ctx_->err_recognition |= AV_EF_CRCCHECK | AV_EF_BITSTREAM | AV_EF_BUFFER;
+        // AV_EF_AGGRESSIVE is critical for H264 — without it FFmpeg silently
+        // conceals missing reference data and outputs a corrupt-looking frame
+        // without setting decode_error_flags or printing any log message,
+        // bypassing both our corruption detection mechanisms entirely.
+        codec_ctx_->err_recognition |= AV_EF_CRCCHECK | AV_EF_BITSTREAM
+                                     | AV_EF_BUFFER   | AV_EF_AGGRESSIVE;
+
+        // Suppress FFmpeg INFO/DEBUG log traffic entirely — our callback only
+        // acts on WARNING and above, and FFmpeg is very chatty internally.
+        av_log_set_level(AV_LOG_WARNING);
 
         // Intercept FFmpeg log messages for corruption that decode_error_flags misses.
         av_log_set_callback(ffmpeg_log_callback);
@@ -142,17 +152,17 @@ public:
 
         sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
             in_topic, qos,
-            std::bind(&VoxlH264Decoder::callback, this, std::placeholders::_1));
+            [this](sensor_msgs::msg::CompressedImage::SharedPtr msg) {
+                callback(std::move(msg));
+            });
 
-        // Watchdog fires once after 5s to catch startup issues.
         watchdog_timer_ = create_wall_timer(
             std::chrono::seconds(5),
-            std::bind(&VoxlH264Decoder::watchdog, this));
+            [this]() { watchdog(); });
 
-        // Periodic stats summary every 10s.
         stats_timer_ = create_wall_timer(
             std::chrono::seconds(10),
-            std::bind(&VoxlH264Decoder::print_stats, this));
+            [this]() { print_stats(); });
 
         RCLCPP_INFO(get_logger(), "H264 decoder started  |  %s → %s",
             in_topic.c_str(), out_topic.c_str());
@@ -167,27 +177,30 @@ public:
 
 private:
     // -----------------------------------------------------------------------
-    void callback(const sensor_msgs::msg::CompressedImage::SharedPtr msg)
+    void callback(sensor_msgs::msg::CompressedImage::SharedPtr msg)
     {
-        const auto & fmt = msg->format;
-        if (fmt != "h264" && fmt != "H264") {
-            RCLCPP_WARN_ONCE(get_logger(),
-                "Unexpected format '%s' — expected h264. "
-                "Check voxl-mpa-to-ros2 configuration.", fmt.c_str());
-            return;
+        // Format check: only run once, then skip on the hot path.
+        if (!format_confirmed_) {
+            const auto & fmt = msg->format;
+            if (fmt != "h264" && fmt != "H264") {
+                RCLCPP_WARN_ONCE(get_logger(),
+                    "Unexpected format '%s' — expected h264. "
+                    "Check voxl-mpa-to-ros2 configuration.", fmt.c_str());
+                return;
+            }
+            format_confirmed_ = true;
         }
 
-        // Cache packets containing SPS/PPS so they can be replayed after a
-        // flush.  VOXL sends parameter sets once at startup only.
-        // Packets that bundle SPS+PPS with an IDR are also cached — the
-        // IDR replay after a flush is drained immediately and is harmless.
-        if (contains_parameter_sets(msg->data)) {
-            param_set_cache_ = msg->data;
-            needs_params_    = false;
+        // Param set scan: only needed until the cache is filled.
+        // SPS+PPS arrives once at startup — skip the O(n) scan for every
+        // subsequent P/B-frame.
+        if (param_set_cache_.empty() || needs_params_) {
+            if (contains_parameter_sets(msg->data)) {
+                param_set_cache_ = msg->data;
+                needs_params_    = false;
+            }
         }
 
-        // If still waiting for SPS+PPS, silently drop all other packets.
-        // The watchdog will report if nothing arrives after 5s.
         if (needs_params_) return;
 
         packets_received_++;
@@ -218,7 +231,8 @@ private:
             && gap_ms < avg_gap_ms_ * 0.5)
         {
             frames_dropped_++;
-            return;   // discard backlog packet silently
+            flush_and_restore_params();   // broken reference chain — wait for next I-frame
+            return;
         }
 
         // Clear the FFmpeg log error flag before each packet so it only
@@ -370,11 +384,10 @@ private:
 
         if (avcodec_send_packet(codec_ctx_, &ps_pkt) < 0) return;
 
-        // Drain any frames produced by the parameter set replay.
-        AVFrame * tmp = av_frame_alloc();
-        while (tmp && avcodec_receive_frame(codec_ctx_, tmp) == 0)
-            av_frame_unref(tmp);
-        av_frame_free(&tmp);
+        // Drain any frames produced by the parameter set replay using the
+        // member frame_ — no heap allocation needed.
+        while (avcodec_receive_frame(codec_ctx_, frame_) == 0)
+            av_frame_unref(frame_);
     }
 
     // -----------------------------------------------------------------------
@@ -393,7 +406,7 @@ private:
             sws_ctx_,
             w, h, src_fmt,
             w, h, AV_PIX_FMT_BGR24,
-            SWS_BILINEAR, nullptr, nullptr, nullptr);
+            SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
 
         if (!sws_ctx_) {
             RCLCPP_ERROR(get_logger(), "sws_getCachedContext failed");
@@ -436,6 +449,7 @@ private:
     // ---- Decoder state -----------------------------------------------------
     bool needs_params_        {true};   // true until first SPS+PPS seen
     bool got_keyframe_        {false};
+    bool format_confirmed_    {false};  // skip format string check after first packet
     int  consecutive_errors_  {0};
     int  consecutive_corrupt_ {0};
     int64_t last_recv_ns_     {0};      // steady_clock time of last packet
