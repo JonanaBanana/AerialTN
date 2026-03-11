@@ -11,11 +11,14 @@
 //   target_link_libraries(<target> PkgConfig::LIBAV)
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/qos.hpp>
+#include <rmw/qos_profiles.h>
 #include <sensor_msgs/msg/compressed_image.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <std_msgs/msg/header.hpp>
 
 #include <chrono>
+#include <cstdarg>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -35,6 +38,40 @@ static std::string av_error_string(int errnum)
     char buf[AV_ERROR_MAX_STRING_SIZE]{};
     av_strerror(errnum, buf, sizeof(buf));
     return {buf};
+}
+
+// ---------------------------------------------------------------------------
+// Custom FFmpeg log callback.
+//
+// The HEVC decoder sometimes emits error messages (e.g. "Could not find ref
+// with POC X") without setting decode_error_flags on the output frame,
+// producing silently garbled output.  We intercept those messages here and
+// set a thread_local flag so the callback can drop the affected frame.
+//
+// thread_local ensures multiple decoder nodes in the same process don't
+// interfere with each other.
+// ---------------------------------------------------------------------------
+static thread_local bool g_ffmpeg_decode_error = false;
+
+static void ffmpeg_log_callback(void * /*avcl*/, int level, const char * fmt, va_list vl)
+{
+    char buf[256];
+    vsnprintf(buf, sizeof(buf), fmt, vl);
+
+    if (level <= AV_LOG_WARNING) {
+        if (strstr(buf, "Could not find ref")       ||
+            strstr(buf, "decode_slice_header error") ||
+            strstr(buf, "no frame!")                ||
+            strstr(buf, "PPS id out of range")      ||
+            strstr(buf, "non-existing PPS"))
+        {
+            g_ffmpeg_decode_error = true;
+            return;   // suppress — counted in stats, no need to print
+        }
+    }
+
+    // Pass everything else through to the default handler.
+    av_log_default_callback(nullptr, level, fmt, vl);
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +107,12 @@ public:
         if (avcodec_open2(codec_ctx_, codec, nullptr) < 0)
             throw std::runtime_error("avcodec_open2 failed");
 
+        // Promote concealed frames to flagged errors where possible.
+        codec_ctx_->err_recognition |= AV_EF_CRCCHECK | AV_EF_BITSTREAM | AV_EF_BUFFER;
+
+        // Intercept FFmpeg log messages for corruption that decode_error_flags misses.
+        av_log_set_callback(ffmpeg_log_callback);
+
         frame_     = av_frame_alloc();
         frame_bgr_ = av_frame_alloc();
         if (!frame_ || !frame_bgr_)
@@ -78,26 +121,33 @@ public:
         // ---- ROS setup ---------------------------------------------------
         pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 
-        // Use VOLATILE + BestEffort to match voxl-mpa-to-ros2's publisher QoS.
-        // TRANSIENT_LOCAL would be ideal to catch the VPS+SPS+PPS packet when
-        // subscribing late, but voxl-mpa-to-ros2 uses VOLATILE so the two are
-        // incompatible — no messages would arrive at all with TRANSIENT.
-        // The startup race is instead handled by the watchdog below.
-        auto qos = rclcpp::QoS(30)
-            .reliability(rclcpp::ReliabilityPolicy::Reliable)
-            .durability(rclcpp::DurabilityPolicy::TransientLocal);
+        // BEST_EFFORT subscriber prevents retransmission backlog over WiFi.
+        // Compatible with the RELIABLE publisher on voxl-mpa-to-ros2.
+        // BEST_EFFORT subscriber prevents retransmission backlog over WiFi.
+        // Compatible with the RELIABLE publisher on voxl-mpa-to-ros2.
+        // Uses rmw profile directly for compatibility with both Foxy and Humble.
+        rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
+        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
+        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+        qos_profile.depth              = 1;
+        auto qos = rclcpp::QoS(
+            rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
 
         sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
             in_topic, qos,
             std::bind(&VoxlHevcDecoder::callback, this, std::placeholders::_1));
 
-        // Watchdog: fires once after 5s. If packets arrived but nothing decoded,
-        // the VPS+SPS+PPS packet was missed at startup — print a clear fix.
+        // Watchdog fires once after 5s to catch startup issues.
         watchdog_timer_ = create_wall_timer(
             std::chrono::seconds(5),
             std::bind(&VoxlHevcDecoder::watchdog, this));
 
-        RCLCPP_INFO(get_logger(), "Decoding %s  →  %s  [hevc]",
+        // Periodic stats summary every 10s.
+        stats_timer_ = create_wall_timer(
+            std::chrono::seconds(10),
+            std::bind(&VoxlHevcDecoder::print_stats, this));
+
+        RCLCPP_INFO(get_logger(), "HEVC decoder started  |  %s → %s",
             in_topic.c_str(), out_topic.c_str());
     }
 
@@ -110,210 +160,185 @@ public:
     }
 
 private:
+    // -----------------------------------------------------------------------
     void callback(const sensor_msgs::msg::CompressedImage::SharedPtr msg)
     {
         const auto & fmt = msg->format;
         if (fmt != "h265" && fmt != "H265" && fmt != "hevc" && fmt != "HEVC") {
             RCLCPP_WARN_ONCE(get_logger(),
-                "Unexpected format '%s' — expected h265/hevc", fmt.c_str());
+                "Unexpected format '%s' — expected h265/hevc. "
+                "Check voxl-mpa-to-ros2 configuration.", fmt.c_str());
             return;
         }
 
-        // Cache any packet containing VPS/SPS/PPS so it can be replayed after
-        // a decoder flush.  Without this, HEVC fails with "PPS id out of range"
-        // after a flush because VOXL only sends parameter sets once at startup.
-        //
-        // Intentionally caches packets that also contain an IDR frame — VOXL
-        // frequently bundles VPS+SPS+PPS together with the first IDR in a single
-        // packet.  Replaying such a packet after a flush is harmless because
-        // flush_and_restore_params() drains any decoded output frames produced.
-        if (contains_parameter_sets(msg->data)) {
+        // Cache packets containing VPS/SPS/PPS so they can be replayed after
+        // a decoder flush.  VOXL sends parameter sets once at startup only.
+        // Packets that bundle VPS+SPS+PPS with an IDR are also cached — the
+        // IDR replay after a flush is drained immediately and is harmless.
+        if (contains_parameter_sets(msg->data))
             param_set_cache_ = msg->data;
-            RCLCPP_DEBUG(get_logger(),
-                "Cached %zu-byte parameter set packet",
-                param_set_cache_.size());
-        }
 
         packets_received_++;
 
-        // Stack-allocated AVPacket pointing directly at the ROS buffer.
-        // avcodec_send_packet() treats data as read-only so the const_cast
-        // is safe.  No heap allocation or free needed.
+        // Clear the FFmpeg log error flag before each packet so it only
+        // reflects errors from decoding this specific packet.
+        g_ffmpeg_decode_error = false;
+
         AVPacket pkt{};
         pkt.data = const_cast<uint8_t *>(msg->data.data());
         pkt.size = static_cast<int>(msg->data.size());
 
         int ret = avcodec_send_packet(codec_ctx_, &pkt);
         if (ret < 0) {
-            RCLCPP_WARN(get_logger(), "avcodec_send_packet error: %s",
-                av_error_string(ret).c_str());
-
-            // After repeated failures flush and restore parameter sets so the
-            // decoder can resync cleanly on the next IDR frame.
-            if (++consecutive_errors_ >= kMaxConsecutiveErrors) {
-                RCLCPP_WARN(get_logger(),
-                    "Too many consecutive errors — flushing decoder and "
-                    "restoring VPS+SPS+PPS");
+            packets_failed_++;
+            if (++consecutive_errors_ >= kMaxConsecutiveErrors)
                 flush_and_restore_params();
-            }
             return;
         }
         consecutive_errors_ = 0;
 
-        // A single packet may produce 0 or more decoded frames
         while (true) {
             ret = avcodec_receive_frame(codec_ctx_, frame_);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-                break;
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) {
-                RCLCPP_WARN(get_logger(), "avcodec_receive_frame error: %s",
-                    av_error_string(ret).c_str());
+                RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                    "avcodec_receive_frame error: %s", av_error_string(ret).c_str());
                 break;
             }
 
-            // Don't publish until we have a clean I-frame anchor.
-            // Suppresses corrupt output when joining mid-stream.
             if (frame_->pict_type == AV_PICTURE_TYPE_I)
                 got_keyframe_ = true;
 
-            // FFmpeg sets decode_error_flags when it detected bitstream errors
-            // (e.g. a P-frame whose reference frame was missing — "Could not
-            // find ref with POC X").  Count these: if they run long it means
-            // the reference chain is broken and we should flush proactively
-            // rather than waiting passively for the next natural IDR, which
-            // could be many seconds away.
-            if (frame_->decode_error_flags != 0) {
-                RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                    "Corrupt frame (flags=0x%x) — waiting for next I-frame",
-                    frame_->decode_error_flags);
+            // Drop frame if decode_error_flags is set or the FFmpeg log
+            // callback detected a reference error for this packet.
+            const bool corrupt = (frame_->decode_error_flags != 0) || g_ffmpeg_decode_error;
+            g_ffmpeg_decode_error = false;
+
+            if (corrupt) {
+                frames_dropped_++;
                 got_keyframe_ = false;
                 av_frame_unref(frame_);
 
-                if (++consecutive_corrupt_ >= kMaxConsecutiveCorrupt) {
-                    RCLCPP_WARN(get_logger(),
-                        "%d consecutive corrupt frames — flushing decoder "
-                        "and restoring VPS+SPS+PPS to resync faster",
-                        kMaxConsecutiveCorrupt);
+                if (++consecutive_corrupt_ >= kMaxConsecutiveCorrupt)
                     flush_and_restore_params();
-                }
                 continue;
             }
             consecutive_corrupt_ = 0;
 
             if (!got_keyframe_) {
-                RCLCPP_DEBUG(get_logger(), "Dropping frame — no I-frame yet");
                 av_frame_unref(frame_);
                 continue;
             }
 
             publish_frame(msg->header);
-            frames_decoded_++;
+            frames_published_++;
             av_frame_unref(frame_);
         }
     }
 
+    // -----------------------------------------------------------------------
     void watchdog()
     {
-        watchdog_timer_->cancel();   // fire once only
+        watchdog_timer_->cancel();
 
         if (packets_received_ == 0) {
-            RCLCPP_WARN(get_logger(),
-                "No packets received after 5s — check input topic name "
-                "and that voxl-mpa-to-ros2 is running");
+            RCLCPP_ERROR(get_logger(),
+                "No packets received after 5s — check that voxl-mpa-to-ros2 "
+                "is running and the input topic name is correct");
             return;
         }
 
-        if (frames_decoded_ == 0) {
+        if (frames_published_ == 0) {
             RCLCPP_ERROR(get_logger(),
-                "Received %d packets but decoded 0 frames — the VPS+SPS+PPS "
-                "parameter set packet was probably published before this node "
-                "subscribed. "
-                "Fix: restart voxl-mpa-to-ros2 AFTER the decoder is running, "
-                "or lower small_venc_nPframes in voxl-camera-server config "
-                "so a fresh I-frame arrives sooner.",
+                "Received %d packets but published 0 frames — "
+                "VPS+SPS+PPS was likely missed at startup. "
+                "Restart voxl-mpa-to-ros2 to recover.",
                 packets_received_);
         }
     }
 
     // -----------------------------------------------------------------------
+    // Prints a one-line stats summary and resets counters for the next window.
+    // -----------------------------------------------------------------------
+    void print_stats()
+    {
+        const int drop_pct = packets_received_ > 0
+            ? (frames_dropped_ * 100) / packets_received_ : 0;
+
+        RCLCPP_INFO(get_logger(),
+            "[ 10s stats ]  received: %d  published: %d  "
+            "dropped: %d (%d%%)  send_errors: %d  flushes: %d",
+            packets_received_, frames_published_,
+            frames_dropped_,   drop_pct,
+            packets_failed_,   flush_count_);
+
+        packets_received_ = 0;
+        frames_published_ = 0;
+        frames_dropped_   = 0;
+        packets_failed_   = 0;
+        flush_count_      = 0;
+    }
+
+    // -----------------------------------------------------------------------
     // Returns true if the packet contains at least one HEVC parameter set NAL:
-    //   VPS (type 32), SPS (type 33), PPS (type 34)
-    //
-    // Intentionally returns true even if the packet also contains other NALs
-    // (e.g. an IDR frame).  VOXL frequently bundles VPS+SPS+PPS together with
-    // the first IDR in a single packet.  The old approach (returning false if
-    // ANY non-param NAL was present) caused param_set_cache_ to stay empty in
-    // that case, making flush recovery impossible.
+    // VPS (32), SPS (33), or PPS (34).  Returns true even if the packet also
+    // contains other NAL types (e.g. an IDR frame).
     // -----------------------------------------------------------------------
     static bool contains_parameter_sets(const std::vector<uint8_t> & data)
     {
         size_t i = 0;
         while (i < data.size()) {
-            // Find Annex-B start code: 0x000001 or 0x00000001
             size_t sc_len = 0;
-            if (i + 3 < data.size() &&
-                data[i]==0 && data[i+1]==0 && data[i+2]==1)
+            if (i + 3 < data.size() && data[i]==0 && data[i+1]==0 && data[i+2]==1)
                 sc_len = 3;
-            else if (i + 4 < data.size() &&
-                data[i]==0 && data[i+1]==0 && data[i+2]==0 && data[i+3]==1)
+            else if (i + 4 < data.size() && data[i]==0 && data[i+1]==0 && data[i+2]==0 && data[i+3]==1)
                 sc_len = 4;
             else { ++i; continue; }
 
             i += sc_len;
             if (i >= data.size()) break;
 
-            // HEVC NAL type: bits[1..6] of the first byte of the two-byte
-            // NAL unit header — VPS=32, SPS=33, PPS=34
-            const uint8_t hevc_nal = (data[i] >> 1) & 0x3F;
-            if (hevc_nal == 32 || hevc_nal == 33 || hevc_nal == 34)
-                return true;   // found at least one parameter set NAL
-
+            const uint8_t nal = (data[i] >> 1) & 0x3F;   // HEVC NAL type
+            if (nal == 32 || nal == 33 || nal == 34)       // VPS / SPS / PPS
+                return true;
             ++i;
         }
         return false;
     }
 
-    // Flush the decoder and immediately replay the cached parameter set packet
-    // so the decoder is ready to accept the next IDR without erroring.
+    // -----------------------------------------------------------------------
+    // Flush the decoder and replay cached VPS+SPS+PPS so it is immediately
+    // ready to decode the next IDR without erroring.
+    // -----------------------------------------------------------------------
     void flush_and_restore_params()
     {
         avcodec_flush_buffers(codec_ctx_);
         got_keyframe_        = false;
         consecutive_errors_  = 0;
         consecutive_corrupt_ = 0;
+        flush_count_++;
 
-        if (param_set_cache_.empty()) {
-            RCLCPP_WARN(get_logger(),
-                "Flushed decoder but no VPS+SPS+PPS cached yet — "
-                "stream will recover on next I-frame");
-            return;
-        }
+        if (param_set_cache_.empty()) return;
 
         AVPacket ps_pkt{};
         ps_pkt.data = param_set_cache_.data();
         ps_pkt.size = static_cast<int>(param_set_cache_.size());
 
-        if (avcodec_send_packet(codec_ctx_, &ps_pkt) < 0) {
-            RCLCPP_WARN(get_logger(),
-                "Failed to replay VPS+SPS+PPS after flush");
-        } else {
-            RCLCPP_DEBUG(get_logger(),
-                "Replayed %zu-byte VPS+SPS+PPS after flush",
-                param_set_cache_.size());
-            // Drain any output frames produced by the replay
-            AVFrame * tmp = av_frame_alloc();
-            while (tmp && avcodec_receive_frame(codec_ctx_, tmp) == 0)
-                av_frame_unref(tmp);
-            av_frame_free(&tmp);
-        }
+        if (avcodec_send_packet(codec_ctx_, &ps_pkt) < 0) return;
+
+        // Drain any frames produced by the parameter set replay.
+        AVFrame * tmp = av_frame_alloc();
+        while (tmp && avcodec_receive_frame(codec_ctx_, tmp) == 0)
+            av_frame_unref(tmp);
+        av_frame_free(&tmp);
     }
 
+    // -----------------------------------------------------------------------
     void publish_frame(const std_msgs::msg::Header & src_header)
     {
         const int w = frame_->width;
         const int h = frame_->height;
 
-        // Reallocate the BGR buffer only when the frame size changes
         const int needed = av_image_get_buffer_size(AV_PIX_FMT_BGR24, w, h, 1);
         if (bgr_buffer_size_ < needed) {
             av_frame_unref(frame_bgr_);
@@ -327,7 +352,6 @@ private:
             bgr_buffer_size_ = needed;
         }
 
-        // YUV → BGR colour-space conversion
         sws_ctx_ = sws_getCachedContext(
             sws_ctx_,
             w, h, static_cast<AVPixelFormat>(frame_->format),
@@ -339,59 +363,60 @@ private:
             return;
         }
 
-        sws_scale(
-            sws_ctx_,
+        sws_scale(sws_ctx_,
             frame_->data,     frame_->linesize,     0, h,
             frame_bgr_->data, frame_bgr_->linesize);
 
-        // Copy row-by-row to strip any FFmpeg row padding so that
-        // step == width * 3, which ROS consumers (RViz, cv_bridge) expect.
-        auto out         = sensor_msgs::msg::Image();
-        out.header       = src_header;
+        auto out            = sensor_msgs::msg::Image();
+        out.header          = src_header;
         out.header.frame_id = frame_id_;
-        out.height       = static_cast<uint32_t>(h);
-        out.width        = static_cast<uint32_t>(w);
-        out.encoding     = "bgr8";
-        out.is_bigendian = false;
-        out.step         = static_cast<uint32_t>(w * 3);
+        out.height          = static_cast<uint32_t>(h);
+        out.width           = static_cast<uint32_t>(w);
+        out.encoding        = "bgr8";
+        out.is_bigendian    = false;
+        out.step            = static_cast<uint32_t>(w * 3);
         out.data.resize(h * w * 3);
 
         const int row_bytes = w * 3;
-        for (int row = 0; row < h; ++row) {
-            std::memcpy(
-                out.data.data() + row * row_bytes,
-                frame_bgr_->data[0] + row * frame_bgr_->linesize[0],
-                row_bytes);
-        }
+        for (int row = 0; row < h; ++row)
+            std::memcpy(out.data.data() + row * row_bytes,
+                        frame_bgr_->data[0] + row * frame_bgr_->linesize[0],
+                        row_bytes);
 
         pub_->publish(out);
     }
 
-    // FFmpeg state
+    // ---- FFmpeg state ------------------------------------------------------
     AVCodecContext * codec_ctx_;
     SwsContext *     sws_ctx_;
-    AVFrame *        frame_;           // decoded YUV frame  (reused per callback)
-    AVFrame *        frame_bgr_;       // converted BGR frame (reused per callback)
+    AVFrame *        frame_;        // decoded YUV frame,   reused per callback
+    AVFrame *        frame_bgr_;    // converted BGR frame, reused per callback
     int              bgr_buffer_size_;
 
-    // Decoder state
+    // ---- Decoder state -----------------------------------------------------
     bool got_keyframe_        {false};
     int  consecutive_errors_  {0};
-    int  consecutive_corrupt_ {0};   // corrupt frames from broken ref chain
-    int  packets_received_    {0};
-    int  frames_decoded_      {0};
+    int  consecutive_corrupt_ {0};
     static constexpr int kMaxConsecutiveErrors  {5};
-    static constexpr int kMaxConsecutiveCorrupt {10};  // ~330ms at 30fps
+    static constexpr int kMaxConsecutiveCorrupt {4};   // ~133ms at 30fps
 
-    // Cached parameter set packet — replayed after any flush so the decoder
-    // doesn't fail with "PPS id out of range" on the next IDR.
+    // ---- Stats (reset every 10s by print_stats) ----------------------------
+    int packets_received_ {0};
+    int frames_published_ {0};
+    int frames_dropped_   {0};
+    int packets_failed_   {0};
+    int flush_count_      {0};
+
+    // ---- Parameter set cache -----------------------------------------------
+    // Replayed after any flush so the decoder doesn't fail on the next IDR.
     std::vector<uint8_t> param_set_cache_;
 
-    // ROS state
+    // ---- ROS state ---------------------------------------------------------
     std::string frame_id_;
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr sub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr              pub_;
-    rclcpp::TimerBase::SharedPtr                                       watchdog_timer_;
+    rclcpp::TimerBase::SharedPtr watchdog_timer_;
+    rclcpp::TimerBase::SharedPtr stats_timer_;
 };
 
 int main(int argc, char ** argv)
