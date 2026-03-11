@@ -59,6 +59,14 @@ public:
         frame_id_            = get_parameter("frame_id").as_string();
 
         // ---- FFmpeg setup ------------------------------------------------
+        // avcodec_register_all() is required in FFmpeg < 4.0 to register
+        // all built-in codecs before avcodec_find_decoder() can find them.
+        // It was deprecated in 4.0 (codecs auto-register) and removed later,
+        // so we guard it with a version check for cross-version compatibility.
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 0, 0)
+        avcodec_register_all();
+#endif
+
         const AVCodec * codec = avcodec_find_decoder(AV_CODEC_ID_H264);
         if (!codec)
             throw std::runtime_error("avcodec_find_decoder failed for H264");
