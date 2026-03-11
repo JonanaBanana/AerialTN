@@ -1,46 +1,60 @@
 from launch import LaunchDescription
-from launch_ros.actions import Node
-
+from launch.actions import ExecuteProcess
+import os
+import tempfile
+import yaml
+from datetime import datetime
 
 def generate_launch_description():
+
+    # Timestamped output folder
+    bag_name = 'voxlbag_encoded_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = os.path.join('/bagfiles', bag_name)
+
+    # Encoded camera topics that require TRANSIENT_LOCAL to guarantee the
+    # SPS/PPS parameter set packet is captured at the start of the bag.
+    # Without this, ros2 bag record uses VOLATILE and misses the SPS/PPS
+    # if recording starts after voxl-mpa-to-ros2, making the bag undecodable.
+    encoded_topics = [
+        '/low_light_down_misp_encoded',
+        '/tracking_down_misp_encoded',
+        '/tracking_front_misp_encoded',
+    ]
+
+    other_topics = [
+        '/imu_apps',
+        '/fmu/out/vehicle_gps_position',
+        '/fmu/out/vehicle_local_position',
+        '/fmu/out/vehicle_odometry',
+    ]
+
+    # Build QoS override yaml for the encoded topics only.
+    # Other topics use the default QoS so we don't override them.
+    qos_overrides = {
+        topic: {
+            'reliability':  'reliable',
+            'durability':   'transient_local',
+            'history':      'keep_last',
+            'depth':        10,
+        }
+        for topic in encoded_topics
+    }
+
+    # Write to a temp file — it persists for the lifetime of the process.
+    qos_file = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.yaml', delete=False)
+    yaml.dump(qos_overrides, qos_file)
+    qos_file.flush()
+
     return LaunchDescription([
-        Node(
-            package='aerial_tn',
-            executable='voxl_h264_decoder',
-            name='decoder_low_light_down',
-            parameters=[{
-                'input_topic': '/low_light_down_misp_encoded',
-                'output_topic': '/low_light_down_misp_decoded',
-                'frame_id': 'low_light_down',
-                'live_stream': False,   #enable only when streaming over wifi, 
-                                        #as it will provide additional checks to increase stream stability
-                'convert_to_bgr': True #enable only when you want to visualize in rviz. 
-                                        #enabling doubles computation per frame, but allows bgr8 output instead of yuv420p.
-            }]
-            ),
-        Node(
-            package='aerial_tn',
-            executable='voxl_h264_decoder',
-            name='decoder_tracking_down',
-            parameters=[{
-                'input_topic': '/tracking_down_misp_encoded',
-                'output_topic': '/tracking_down_misp_decoded',
-                'frame_id': 'tracking_down',
-                'live_stream': False, 
-                'convert_to_bgr': True
-            }]
-            ),
-        Node(
-            package='aerial_tn',
-            executable='voxl_h264_decoder',
-            name='decoder_tracking_front',
-            parameters=[{
-                'input_topic': '/tracking_front_misp_encoded',
-                'output_topic': '/tracking_front_misp_decoded',
-                'frame_id': 'tracking_front',
-                'live_stream': False, 
-                'convert_to_bgr': True
-            }]
-            )
+        ExecuteProcess(
+            cmd=[
+                'ros2', 'bag', 'record',
+                '--output', output_dir,
+                '--max-bag-size', '5000000000',
+                '--qos-profile-overrides-path', qos_file.name,
+            ] + encoded_topics + other_topics,
+            output='screen',
+            shell=False,
+        )
     ])
-    
