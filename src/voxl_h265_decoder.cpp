@@ -128,12 +128,16 @@ public:
         // ---- ROS setup ---------------------------------------------------
         pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 
-        // BEST_EFFORT subscriber prevents retransmission backlog over WiFi.
-        // Compatible with the RELIABLE publisher on voxl-mpa-to-ros2.
-        // Uses rmw profile directly for compatibility with both Foxy and Humble.
+        // RELIABLE + TRANSIENT_LOCAL guarantees the publisher replays its
+        // cached VPS+SPS+PPS to this subscriber on connection, regardless of
+        // startup order.  BEST_EFFORT + VOLATILE does not guarantee this
+        // replay, causing intermittent "waiting for parameter sets" failures.
+        //
+        // Backlog is kept in check by depth=1 and a staleness check in the
+        // callback that discards burst packets.
         rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
-        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
-        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
         qos_profile.depth              = 1;
         auto qos = rclcpp::QoS(
             rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
@@ -147,9 +151,9 @@ public:
             std::chrono::seconds(5),
             std::bind(&VoxlHevcDecoder::watchdog, this));
 
-        // Periodic stats summary every 10s.
+        // Periodic stats summary every 30s.
         stats_timer_ = create_wall_timer(
-            std::chrono::seconds(10),
+            std::chrono::seconds(30),
             std::bind(&VoxlHevcDecoder::print_stats, this));
 
         RCLCPP_INFO(get_logger(), "HEVC decoder started  |  %s → %s",
@@ -184,6 +188,27 @@ private:
             param_set_cache_ = msg->data;
 
         packets_received_++;
+
+        // Backlog detection using a rolling average of inter-arrival time.
+        // At 30fps normal cadence is ~33ms per packet.  When a RELIABLE
+        // middleware queue drains a backlog, packets arrive significantly
+        // faster than the rolling average — we discard these to stay real-time.
+        const int64_t now_ns = std::chrono::steady_clock::now()
+                                   .time_since_epoch().count();
+        const int64_t gap_ms = (last_recv_ns_ == 0) ? 33
+                               : (now_ns - last_recv_ns_) / 1'000'000LL;
+        last_recv_ns_ = now_ns;
+
+        avg_gap_ms_ = (avg_gap_ms_ < 0.0)
+            ? static_cast<double>(gap_ms)
+            : avg_gap_ms_ * 0.9 + gap_ms * 0.1;
+
+        if (packets_received_ > 10 && avg_gap_ms_ > 10.0
+            && gap_ms < avg_gap_ms_ * 0.5)
+        {
+            frames_dropped_++;
+            return;   // discard backlog packet silently
+        }
 
         // Clear the FFmpeg log error flag before each packet so it only
         // reflects errors from decoding this specific packet.
@@ -271,7 +296,7 @@ private:
             ? (frames_dropped_ * 100) / packets_received_ : 0;
 
         RCLCPP_INFO(get_logger(),
-            "[ 10s stats ]  received: %d  published: %d  "
+            "[ 30s stats ]  received: %d  published: %d  "
             "dropped: %d (%d%%)  send_errors: %d  flushes: %d",
             packets_received_, frames_published_,
             frames_dropped_,   drop_pct,
@@ -402,10 +427,12 @@ private:
     bool got_keyframe_        {false};
     int  consecutive_errors_  {0};
     int  consecutive_corrupt_ {0};
+    int64_t last_recv_ns_     {0};      // steady_clock time of last packet
+    double  avg_gap_ms_       {-1.0};   // rolling average inter-arrival (ms)
     static constexpr int kMaxConsecutiveErrors  {5};
     static constexpr int kMaxConsecutiveCorrupt {4};   // ~133ms at 30fps
 
-    // ---- Stats (reset every 10s by print_stats) ----------------------------
+    // ---- Stats (reset every 30s by print_stats) ----------------------------
     int packets_received_ {0};
     int frames_published_ {0};
     int frames_dropped_   {0};

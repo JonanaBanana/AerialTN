@@ -126,12 +126,16 @@ public:
         // ---- ROS setup ---------------------------------------------------
         pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 
-        // BEST_EFFORT subscriber prevents retransmission backlog over WiFi.
-        // Compatible with the RELIABLE publisher on voxl-mpa-to-ros2.
-        // Uses rmw profile directly for compatibility with both Foxy and Humble.
+        // RELIABLE + TRANSIENT_LOCAL guarantees the publisher replays its
+        // cached SPS+PPS to this subscriber on connection, regardless of
+        // startup order.  BEST_EFFORT + VOLATILE does not guarantee this
+        // replay, causing intermittent "waiting for SPS+PPS" failures.
+        //
+        // Backlog is kept in check by depth=1 and a staleness check in the
+        // callback that discards packets older than kMaxAgeMs.
         rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
-        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
-        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
         qos_profile.depth              = 1;
         auto qos = rclcpp::QoS(
             rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
@@ -183,15 +187,39 @@ private:
         }
 
         // If still waiting for SPS+PPS, silently drop all other packets.
-        // Passing them to avcodec_send_packet produces endless error spam
-        // with no hope of recovery — VOXL never resends SPS+PPS.
-        if (needs_params_) {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-                "Waiting for SPS+PPS — restart voxl-mpa-to-ros2 to recover");
-            return;
-        }
+        // The watchdog will report if nothing arrives after 5s.
+        if (needs_params_) return;
 
         packets_received_++;
+
+        // Backlog detection using a rolling average of inter-arrival time.
+        // At 30fps normal cadence is ~33ms per packet.  When a RELIABLE
+        // middleware queue drains a backlog, packets arrive significantly
+        // faster than the rolling average — we discard these to stay real-time.
+        // A rolling average adapts to the actual stream framerate and is
+        // robust against paced retransmissions (8-15ms) that a fixed 5ms
+        // threshold would miss.
+        const int64_t now_ns = std::chrono::steady_clock::now()
+                                   .time_since_epoch().count();
+        const int64_t gap_ms = (last_recv_ns_ == 0) ? 33
+                               : (now_ns - last_recv_ns_) / 1'000'000LL;
+        last_recv_ns_ = now_ns;
+
+        // Exponential moving average (alpha=0.1) — slow to update so a burst
+        // of fast packets doesn't corrupt the baseline before we discard them.
+        avg_gap_ms_ = (avg_gap_ms_ < 0.0)
+            ? static_cast<double>(gap_ms)
+            : avg_gap_ms_ * 0.9 + gap_ms * 0.1;
+
+        // Discard if arriving at less than half the rolling average cadence.
+        // Guard: wait for baseline to stabilise (>10 packets) and require
+        // avg > 10ms so we don't misfire on genuinely high-fps streams.
+        if (packets_received_ > 10 && avg_gap_ms_ > 10.0
+            && gap_ms < avg_gap_ms_ * 0.5)
+        {
+            frames_dropped_++;
+            return;   // discard backlog packet silently
+        }
 
         // Clear the FFmpeg log error flag before each packet so it only
         // reflects errors from decoding this specific packet.
@@ -410,6 +438,8 @@ private:
     bool got_keyframe_        {false};
     int  consecutive_errors_  {0};
     int  consecutive_corrupt_ {0};
+    int64_t last_recv_ns_     {0};      // steady_clock time of last packet
+    double  avg_gap_ms_       {-1.0};   // rolling average inter-arrival (ms)
     static constexpr int kMaxConsecutiveErrors  {5};
     static constexpr int kMaxConsecutiveCorrupt {4};   // ~133ms at 30fps
 
