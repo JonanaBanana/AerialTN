@@ -25,7 +25,7 @@ def generate_launch_description():
             cmd=[
                 'ros2', 'bag', 'record',
                 '--output', output_dir,
-                '--max-bag-size', '500000000',   # 5GB bag size (splits bag when exceeding)
+                '--max-bag-size', '5000000000',   # 5GB bag size (splits bag when exceeding)
             ] + topics,
             output='screen',
             shell=False,
