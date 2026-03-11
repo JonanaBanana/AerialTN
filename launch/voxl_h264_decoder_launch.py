@@ -6,7 +6,7 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
 
-    bag_name = 'voxlbag_encoded_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    bag_name = 'voxlbag_encoded_' + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     output_dir = os.path.join('/bagfiles', bag_name)
 
     qos_override = os.path.join(
