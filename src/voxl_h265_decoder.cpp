@@ -88,10 +88,14 @@ public:
         declare_parameter("input_topic",  "/hires_small_encoded");
         declare_parameter("output_topic", "/hires_small_decoded");
         declare_parameter("frame_id",     "hires_small");
+        declare_parameter("live_stream",  true);
+        declare_parameter("convert_to_bgr", true);
 
         const auto in_topic  = get_parameter("input_topic").as_string();
         const auto out_topic = get_parameter("output_topic").as_string();
         frame_id_            = get_parameter("frame_id").as_string();
+        live_stream_         = get_parameter("live_stream").as_bool();
+        convert_to_bgr_      = get_parameter("convert_to_bgr").as_bool();
 
         // ---- FFmpeg setup ------------------------------------------------
         // avcodec_register_all() is required in FFmpeg < 4.0 to register
@@ -194,26 +198,24 @@ private:
 
         packets_received_++;
 
-        // Backlog detection using a rolling average of inter-arrival time.
-        // At 30fps normal cadence is ~33ms per packet.  When a RELIABLE
-        // middleware queue drains a backlog, packets arrive significantly
-        // faster than the rolling average — we discard these to stay real-time.
-        const int64_t now_ns = std::chrono::steady_clock::now()
-                                   .time_since_epoch().count();
-        const int64_t gap_ms = (last_recv_ns_ == 0) ? 33
-                               : (now_ns - last_recv_ns_) / 1'000'000LL;
-        last_recv_ns_ = now_ns;
+        if (live_stream_) {
+            const int64_t now_ns = std::chrono::steady_clock::now()
+                                       .time_since_epoch().count();
+            const int64_t gap_ms = (last_recv_ns_ == 0) ? 33
+                                   : (now_ns - last_recv_ns_) / 1'000'000LL;
+            last_recv_ns_ = now_ns;
 
-        avg_gap_ms_ = (avg_gap_ms_ < 0.0)
-            ? static_cast<double>(gap_ms)
-            : avg_gap_ms_ * 0.9 + gap_ms * 0.1;
+            avg_gap_ms_ = (avg_gap_ms_ < 0.0)
+                ? static_cast<double>(gap_ms)
+                : avg_gap_ms_ * 0.9 + gap_ms * 0.1;
 
-        if (packets_received_ > 10 && avg_gap_ms_ > 10.0
-            && gap_ms < avg_gap_ms_ * 0.5)
-        {
-            frames_dropped_++;
-            flush_and_restore_params();   // broken reference chain — wait for next I-frame
-            return;
+            if (packets_received_ > 10 && avg_gap_ms_ > 10.0
+                && gap_ms < avg_gap_ms_ * 0.5)
+            {
+                frames_dropped_++;
+                flush_and_restore_params();
+                return;
+            }
         }
 
         // Clear the FFmpeg log error flag before each packet so it only
@@ -370,48 +372,80 @@ private:
     {
         const int w = frame_->width;
         const int h = frame_->height;
-        const int row_bytes = w * 3;
-        const size_t needed = static_cast<size_t>(h * row_bytes);
-
-        // Grow output buffer only when frame size increases — no alloc per frame.
-        if (output_buffer_.size() < needed)
-            output_buffer_.resize(needed);
-
-        sws_ctx_ = sws_getCachedContext(
-            sws_ctx_,
-            w, h, static_cast<AVPixelFormat>(frame_->format),
-            w, h, AV_PIX_FMT_BGR24,
-            SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
-
-        if (!sws_ctx_) {
-            RCLCPP_ERROR(get_logger(), "sws_getCachedContext failed");
-            return;
-        }
-
-        // Scale directly into output_buffer_ — eliminates intermediate AVFrame
-        // and row-by-row memcpy.
-        uint8_t * dst_data[4]     = {};
-        int       dst_linesize[4] = {};
-        av_image_fill_arrays(dst_data, dst_linesize,
-            output_buffer_.data(), AV_PIX_FMT_BGR24, w, h, 1);
-
-        sws_scale(sws_ctx_,
-            frame_->data, frame_->linesize, 0, h,
-            dst_data,     dst_linesize);
 
         auto out            = sensor_msgs::msg::Image();
         out.header          = src_header;
         out.header.frame_id = frame_id_;
         out.height          = static_cast<uint32_t>(h);
         out.width           = static_cast<uint32_t>(w);
-        out.encoding        = "bgr8";
         out.is_bigendian    = false;
-        out.step            = static_cast<uint32_t>(row_bytes);
-        out.data            = std::move(output_buffer_);
 
-        pub_->publish(out);
+        if (convert_to_bgr_) {
+            // ---- YUV → BGR conversion ----------------------------------------
+            const int row_bytes = w * 3;
+            const size_t needed = static_cast<size_t>(h * row_bytes);
 
-        output_buffer_ = std::move(out.data);   // reclaim buffer after publish
+            if (output_buffer_.size() < needed)
+                output_buffer_.resize(needed);
+
+            sws_ctx_ = sws_getCachedContext(
+                sws_ctx_,
+                w, h, static_cast<AVPixelFormat>(frame_->format),
+                w, h, AV_PIX_FMT_BGR24,
+                SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+
+            if (!sws_ctx_) {
+                RCLCPP_ERROR(get_logger(), "sws_getCachedContext failed");
+                return;
+            }
+
+            uint8_t * dst_data[4]     = {};
+            int       dst_linesize[4] = {};
+            av_image_fill_arrays(dst_data, dst_linesize,
+                output_buffer_.data(), AV_PIX_FMT_BGR24, w, h, 1);
+
+            sws_scale(sws_ctx_,
+                frame_->data, frame_->linesize, 0, h,
+                dst_data,     dst_linesize);
+
+            out.encoding = "bgr8";
+            out.step     = static_cast<uint32_t>(row_bytes);
+            out.data     = std::move(output_buffer_);
+
+            pub_->publish(out);
+
+            output_buffer_ = std::move(out.data);
+
+        } else {
+            // ---- Raw YUV420p — no conversion, zero extra CPU cost ------------
+            const size_t needed = static_cast<size_t>(w * h * 3 / 2);
+
+            if (output_buffer_.size() < needed)
+                output_buffer_.resize(needed);
+
+            uint8_t * dst = output_buffer_.data();
+
+            for (int row = 0; row < h; ++row) {
+                std::memcpy(dst, frame_->data[0] + row * frame_->linesize[0], w);
+                dst += w;
+            }
+            for (int row = 0; row < h / 2; ++row) {
+                std::memcpy(dst, frame_->data[1] + row * frame_->linesize[1], w / 2);
+                dst += w / 2;
+            }
+            for (int row = 0; row < h / 2; ++row) {
+                std::memcpy(dst, frame_->data[2] + row * frame_->linesize[2], w / 2);
+                dst += w / 2;
+            }
+
+            out.encoding = "yuv420p";
+            out.step     = static_cast<uint32_t>(w);
+            out.data     = std::move(output_buffer_);
+
+            pub_->publish(out);
+
+            output_buffer_ = std::move(out.data);
+        }
     }
 
     // ---- FFmpeg state ------------------------------------------------------
@@ -446,6 +480,8 @@ private:
 
     // ---- ROS state ---------------------------------------------------------
     std::string frame_id_;
+    bool        live_stream_    {true};
+    bool        convert_to_bgr_ {true};
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr sub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr              pub_;
     rclcpp::TimerBase::SharedPtr watchdog_timer_;
