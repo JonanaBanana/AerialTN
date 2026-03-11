@@ -10,18 +10,64 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# ROS2 dependencies
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
-
 # FFmpeg via pkg-config
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
   libavcodec
   libavutil
   libswscale)
+
+# ROS2 dependencies
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
+set(IR_COMP "ir_v4l2_component")
+set(IR_NODE "ircam_node")
+
+# Shared library (composable component)
+add_library(${IR_COMP} SHARED
+  src/ircam/v4l2_capture.cpp
+  src/ircam/ircam_node.cpp
+  src/ircam/ircam_component.cpp  
+)
+
+target_include_directories(${IR_COMP} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>  
+)
+
+ament_target_dependencies(${IR_COMP}
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  std_msgs
+)
+
+# Register the component so "ros2 component load" can find it
+rclcpp_components_register_node(${IR_COMP}
+  PLUGIN "ir_v4l2_camera::IrCameraComponent"
+  EXECUTABLE ir_camera_component_node
+)
+
+# Standalone executable (no composition)
+add_executable(${IR_NODE}
+  src/ircam/v4l2_capture.cpp
+  src/ircam/ircam_node.cpp
+  src/ircam/ircam_exec.cpp
+)
+
+target_include_directories(${IR_NODE} PUBLIC
+  include
+)
+
+ament_target_dependencies(${IR_NODE}
+  rclcpp
+  sensor_msgs
+  std_msgs
+)
 
 # Build the h264 node
 add_executable(voxl_h264_decoder src/voxl_h264_decoder.cpp)
@@ -45,10 +91,24 @@ ament_target_dependencies(voxl_h265_decoder
 target_link_libraries(voxl_h265_decoder
   PkgConfig::LIBAV)
 
-install(TARGETS voxl_h264_decoder voxl_h265_decoder
-DESTINATION lib/${PROJECT_NAME})
+# Install
+install(
+  TARGETS ${IR_COMP} # composable
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
-# Install launch files.
+install(
+  TARGETS ${IR_NODE} voxl_h264_decoder voxl_h265_decoder # standalone
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
+
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}/
