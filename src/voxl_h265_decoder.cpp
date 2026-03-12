@@ -118,7 +118,11 @@ public:
             throw std::runtime_error("avcodec_open2 failed");
 
         // Promote concealed frames to flagged errors where possible.
-        codec_ctx_->err_recognition |= AV_EF_CRCCHECK | AV_EF_BITSTREAM | AV_EF_BUFFER;
+        // AV_EF_AGGRESSIVE is critical — without it FFmpeg silently conceals
+        // missing reference data and outputs corrupt-looking frames without
+        // setting decode_error_flags, bypassing both corruption detection paths.
+        codec_ctx_->err_recognition |= AV_EF_CRCCHECK | AV_EF_BITSTREAM
+                                     | AV_EF_BUFFER   | AV_EF_AGGRESSIVE;
 
         // Suppress FFmpeg INFO/DEBUG log traffic entirely — our callback only
         // acts on WARNING and above, and FFmpeg is very chatty internally.
@@ -134,17 +138,22 @@ public:
         // ---- ROS setup ---------------------------------------------------
         pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 
-        // RELIABLE + TRANSIENT_LOCAL guarantees the publisher replays its
-        // cached VPS+SPS+PPS to this subscriber on connection, regardless of
-        // startup order.  BEST_EFFORT + VOLATILE does not guarantee this
-        // replay, causing intermittent "waiting for parameter sets" failures.
+        // RELIABLE + TRANSIENT_LOCAL for live streams — guarantees the publisher
+        // replays cached VPS+SPS+PPS to this subscriber on connection.
         //
-        // Backlog is kept in check by depth=1 and a staleness check in the
-        // callback that discards burst packets.
+        // BEST_EFFORT + VOLATILE for bag playback — ros2 bag play publishes
+        // with VOLATILE by default, which is incompatible with TRANSIENT_LOCAL
+        // subscribers.  With VPS/SPS/PPS re-injected before every frame in the
+        // bag, VOLATILE is sufficient since parameter sets are always present.
         rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
-        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
-        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
         qos_profile.depth              = 30;
+        if (live_stream_) {
+            qos_profile.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+            qos_profile.durability  = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
+        } else {
+            qos_profile.reliability = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
+            qos_profile.durability  = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+        }
         auto qos = rclcpp::QoS(
             rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
 
@@ -180,10 +189,13 @@ private:
         // Format check: only run once, then skip on the hot path.
         if (!format_confirmed_) {
             const auto & fmt = msg->format;
+            RCLCPP_INFO(get_logger(), "First packet received — format: '%s'  size: %zu bytes",
+                fmt.c_str(), msg->data.size());
             if (fmt != "h265" && fmt != "H265" && fmt != "hevc" && fmt != "HEVC") {
-                RCLCPP_WARN_ONCE(get_logger(),
+                RCLCPP_ERROR(get_logger(),
                     "Unexpected format '%s' — expected h265/hevc. "
-                    "Check voxl-mpa-to-ros2 configuration.", fmt.c_str());
+                    "This decoder only handles HEVC. "
+                    "Check voxl-camera-server config or use the H264 decoder.", fmt.c_str());
                 return;
             }
             format_confirmed_ = true;
@@ -191,10 +203,17 @@ private:
 
         // Param set scan: only needed until the cache is filled.
         // VPS+SPS+PPS arrives once at startup — skip the O(n) scan for every
-        // subsequent P/B-frame.
-        if (param_set_cache_.empty())
-            if (contains_parameter_sets(msg->data))
+        // subsequent frame once cached.
+        if (param_set_cache_.empty() || needs_params_) {
+            if (contains_parameter_sets(msg->data)) {
                 param_set_cache_ = msg->data;
+                needs_params_    = false;
+                RCLCPP_INFO(get_logger(), "VPS+SPS+PPS cached (%zu bytes) — decoder ready",
+                    param_set_cache_.size());
+            }
+        }
+
+        if (needs_params_) return;
 
         packets_received_++;
 
@@ -280,18 +299,34 @@ private:
         watchdog_timer_->cancel();
 
         if (packets_received_ == 0) {
-            RCLCPP_ERROR(get_logger(),
-                "No packets received after 5s — check that voxl-mpa-to-ros2 "
-                "is running and the input topic name is correct");
+            if (!format_confirmed_) {
+                RCLCPP_ERROR(get_logger(),
+                    "No packets received after 5s — check that voxl-mpa-to-ros2 "
+                    "is running, the input topic name is correct, and QoS is compatible. "
+                    "Hint: publisher must be RELIABLE+TRANSIENT_LOCAL for live_stream=true.");
+            } else {
+                RCLCPP_ERROR(get_logger(),
+                    "No decodable packets — first packet had wrong format. "
+                    "Check decoder type matches camera encoder (H264 vs HEVC).");
+            }
             return;
         }
 
         if (frames_published_ == 0) {
-            RCLCPP_ERROR(get_logger(),
-                "Received %d packets but published 0 frames — "
-                "VPS+SPS+PPS was likely missed at startup. "
-                "Restart voxl-mpa-to-ros2 to recover.",
-                packets_received_);
+            if (param_set_cache_.empty()) {
+                RCLCPP_ERROR(get_logger(),
+                    "Received %d packets but VPS+SPS+PPS never seen — "
+                    "camera_interface.cpp param set re-injection may not be deployed "
+                    "or the NAL scanner failed to detect the parameter set NALs. "
+                    "Check that the updated camera_interface.cpp is built and running.",
+                    packets_received_);
+            } else {
+                RCLCPP_ERROR(get_logger(),
+                    "Received %d packets, VPS+SPS+PPS cached (%zu bytes), but 0 frames published — "
+                    "FFmpeg rejected all decode attempts. "
+                    "Check for consecutive avcodec_send_packet errors above.",
+                    packets_received_, param_set_cache_.size());
+            }
         }
     }
 
@@ -353,7 +388,10 @@ private:
         consecutive_corrupt_ = 0;
         flush_count_++;
 
-        if (param_set_cache_.empty()) return;
+        if (param_set_cache_.empty()) {
+            needs_params_ = true;
+            return;
+        }
 
         AVPacket ps_pkt{};
         ps_pkt.data = param_set_cache_.data();
@@ -458,6 +496,7 @@ private:
     std::vector<uint8_t> output_buffer_;
 
     // ---- Decoder state -----------------------------------------------------
+    bool needs_params_        {true};   // true until first VPS+SPS+PPS seen
     bool got_keyframe_        {false};
     bool format_confirmed_    {false};  // skip format string check after first packet
     int  consecutive_errors_  {0};
