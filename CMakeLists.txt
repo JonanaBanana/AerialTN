@@ -75,13 +75,26 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
+add_executable(ircam_repub
+  src/ircam/ircam_repub.cpp
+)
+ament_target_dependencies(ircam_repub
+  rclcpp
+  sensor_msgs
+  std_msgs
+)
+install(
+  TARGETS ircam_repub
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(
   DIRECTORY include/
   DESTINATION include
 )
 
 install(DIRECTORY
-  launch
+  launch/
   DESTINATION share/${PROJECT_NAME}/
 )
 

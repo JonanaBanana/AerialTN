@@ -28,13 +28,8 @@ public:
 private:
     void declare_params();
     void read_params();
-
     void capture_loop();
-
     void publish_yuyv(const uint8_t* data, size_t size, uint64_t ts_us);
-    void publish_mono8(const uint8_t* data, size_t size, uint64_t ts_us);
-    void publish_mono16(const uint8_t* data, size_t size, uint64_t ts_us);
-
     void diagnostics_callback();
 
     V4L2Capture capture_;

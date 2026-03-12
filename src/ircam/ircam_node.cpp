@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstring>
 
-#ifndef __linux__
+#ifdef __linux__
 #include <pthread.h>
 #include <sched.h>
 #endif
@@ -17,15 +17,13 @@ IrCameraNode::IrCameraNode(const rclcpp::NodeOptions& options) : Node("ir_v4l2_c
     read_params();
 
     // auto qos = rclcpp::QoS(queue_depth_).reliability(rclcpp::ReliabilityPolicy::BestEffort).durability(rclcpp::DurabilityPolicy::Volatile);
-    // auto qos = rclcpp::QoS(queue_depth_);
-    auto qos = rclcpp::QoS(10);
-
+    auto qos = rclcpp::SensorDataQoS();
     image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("ircam_test_topic", qos);
 
     // Open device
     if (!capture_.open(capture_cfg_)) {
         RCLCPP_FATAL(this->get_logger(),
-            "FAiled to open V4L2 device '%s' - Check device path and permissions ",
+            "Failed to open V4L2 device '%s' - Check device path and permissions ",
             capture_cfg_.device.c_str()    
         );
         throw std::runtime_error("V4L2 open failed");
@@ -69,7 +67,7 @@ IrCameraNode::IrCameraNode(const rclcpp::NodeOptions& options) : Node("ir_v4l2_c
                 "Could not set SCHED_FIFO on capture thread - Falling back to default scheduling"
             );
         }
-        // pin to core 0 (adjust?)
+        // pin to core 6 (adjust?)
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(0, &cpuset);
@@ -99,7 +97,7 @@ IrCameraNode::~IrCameraNode() {
 }
 
 void IrCameraNode::declare_params() {
-    this->declare_parameter<std::string>("device", "/dev/video0");
+    this->declare_parameter<std::string>("device", "/dev/video2");
     this->declare_parameter<int>("width", 640);
     this->declare_parameter<int>("height", 512);
     this->declare_parameter<int>("fps", 30);
@@ -141,24 +139,14 @@ void IrCameraNode::capture_loop() {
             continue;
         }
 
-        switch (output_encoding_) {
-            case OutputEncoding::YUYV:
-                publish_yuyv(frame, bytes_used, ts_us);
-                break;
-            case OutputEncoding::MONO8:
-                publish_mono8(frame, bytes_used, ts_us);
-                break;
-            case OutputEncoding::MONO16:
-                publish_mono16(frame, bytes_used, ts_us);
-                break;
-        }
+        publish_yuyv(frame, bytes_used, ts_us);
 
         // return the buffer to V4L2 after copying data out
         capture_.release_frame();
     }
 }
 
-void IrCameraNode::publish_yuyv(const uint8_t* data, size_t size, uint64_t ts_us) {
+void IrCameraNode::publish_yuyv(const uint8_t* data, size_t size, uint64_t ts_us) {   
     auto msg = std::make_unique<sensor_msgs::msg::Image>();
 
     msg->header.stamp.sec = static_cast<int32_t>(ts_us / 1'000'000ULL);
@@ -174,14 +162,6 @@ void IrCameraNode::publish_yuyv(const uint8_t* data, size_t size, uint64_t ts_us
     msg->data.assign(data, data + size);
     image_pub_->publish(std::move(msg));
     publish_count_.fetch_add(1, std::memory_order_relaxed);
-}
-
-void IrCameraNode::publish_mono8(const uint8_t* data, size_t size, uint64_t ts_us) {
-
-}
-
-void IrCameraNode::publish_mono16(const uint8_t* data, size_t size, uint64_t ts_us) {
-    
 }
 
 void IrCameraNode::diagnostics_callback() {
