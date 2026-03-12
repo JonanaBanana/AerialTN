@@ -1,0 +1,17 @@
+/low_light_down_misp_encoded:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 30
+
+/tracking_down_misp_encoded:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 30
+
+/tracking_front_misp_encoded:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 30
