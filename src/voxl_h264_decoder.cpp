@@ -154,17 +154,22 @@ public:
         // ---- ROS setup ---------------------------------------------------
         pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 
-        // RELIABLE + TRANSIENT_LOCAL guarantees the publisher replays its
-        // cached SPS+PPS to this subscriber on connection, regardless of
-        // startup order.  BEST_EFFORT + VOLATILE does not guarantee this
-        // replay, causing intermittent "waiting for SPS+PPS" failures.
+        // RELIABLE + TRANSIENT_LOCAL for live streams — guarantees the publisher
+        // replays cached SPS+PPS to this subscriber on connection.
         //
-        // Backlog is kept in check by depth=1 and a staleness check in the
-        // callback that discards packets older than kMaxAgeMs.
+        // BEST_EFFORT + VOLATILE for bag playback — ros2 bag play publishes
+        // with VOLATILE by default, which is incompatible with TRANSIENT_LOCAL
+        // subscribers.  With SPS/PPS re-injected before every IDR in the bag,
+        // VOLATILE is sufficient since parameter sets are always in the stream.
         rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
-        qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
-        qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
         qos_profile.depth              = 30;
+        if (live_stream_) {
+            qos_profile.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+            qos_profile.durability  = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
+        } else {
+            qos_profile.reliability = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
+            qos_profile.durability  = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+        }
         auto qos = rclcpp::QoS(
             rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
 
