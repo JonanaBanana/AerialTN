@@ -2,16 +2,16 @@
   reliability: reliable
   durability: transient_local
   history: keep_last
-  depth: 10
+  depth: 300
 
 /tracking_down_misp_encoded:
   reliability: reliable
   durability: transient_local
   history: keep_last
-  depth: 10
+  depth: 300
 
 /tracking_front_misp_encoded:
   reliability: reliable
   durability: transient_local
   history: keep_last
-  depth: 10
+  depth: 300

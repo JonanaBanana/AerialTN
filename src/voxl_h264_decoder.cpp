@@ -164,7 +164,7 @@ public:
         rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
         qos_profile.reliability        = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
         qos_profile.durability         = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL;
-        qos_profile.depth              = 1;
+        qos_profile.depth              = 300;
         auto qos = rclcpp::QoS(
             rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
 
