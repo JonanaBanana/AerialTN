@@ -16,13 +16,7 @@
   history: keep_last
   depth: 30
 
-/hires_down_small_encoded:
-  reliability: reliable
-  durability: transient_local
-  history: keep_last
-  depth: 30
-
-/hires_front_small_encoded:
+/hires_front_misp_encoded:
   reliability: reliable
   durability: transient_local
   history: keep_last
