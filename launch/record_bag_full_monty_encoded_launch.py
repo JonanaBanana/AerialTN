@@ -17,7 +17,6 @@ def generate_launch_description():
         '/low_light_down_misp_encoded',
         '/tracking_down_misp_encoded',
         '/tracking_front_misp_encoded',
-        '/hires_down_small_encoded',
         '/hires_front_small_encoded',
         '/ircam/h264',
         '/imu_apps',
