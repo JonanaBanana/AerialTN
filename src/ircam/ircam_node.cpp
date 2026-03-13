@@ -18,7 +18,7 @@ IrCameraNode::IrCameraNode(const rclcpp::NodeOptions& options) : Node("ir_v4l2_c
 
     // auto qos = rclcpp::QoS(queue_depth_).reliability(rclcpp::ReliabilityPolicy::BestEffort).durability(rclcpp::DurabilityPolicy::Volatile);
     auto qos = rclcpp::SensorDataQoS();
-    image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("ircam_test_topic", qos);
+    image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/ircam/raw_image", qos);
 
     // Open device
     if (!capture_.open(capture_cfg_)) {
@@ -70,7 +70,7 @@ IrCameraNode::IrCameraNode(const rclcpp::NodeOptions& options) : Node("ir_v4l2_c
         // pin to core 6 (adjust?)
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(0, &cpuset);
+        CPU_SET(6, &cpuset);
         pthread_setaffinity_np(handle, sizeof(cpu_set_t), &cpuset);
     }
     #endif
@@ -148,6 +148,7 @@ void IrCameraNode::capture_loop() {
 
 void IrCameraNode::publish_yuyv(const uint8_t* data, size_t size, uint64_t ts_us) {   
     auto msg = std::make_unique<sensor_msgs::msg::Image>();
+    msg->data.resize(capture_.width() * capture_.height() * 2);
 
     msg->header.stamp.sec = static_cast<int32_t>(ts_us / 1'000'000ULL);
     msg->header.stamp.nanosec = static_cast<uint32_t>((ts_us % 1'000'000ULL) * 1000ULL);
