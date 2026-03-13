@@ -11,9 +11,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('params_file', default_value=default_params),
-        DeclareLaunchArgument('device', default_value='/dev/video3'),
+        DeclareLaunchArgument('device', default_value='/dev/video2'),
         DeclareLaunchArgument('encoding', default_value='yuyv'),
-        DeclareLaunchArgument('v4l2_buffers', default_value='8'),
+        DeclareLaunchArgument('v4l2_buffers', default_value='4'),
 
         Node(
             package='aerial_tn',
