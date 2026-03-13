@@ -11,7 +11,7 @@ def generate_launch_description():
 
     qos_override = os.path.join(
         get_package_share_directory('aerial_tn'),
-        'config', 'qos_override.yaml')
+        'config', 'qos_override_full_monty.yaml')
 
     topics = [
         '/low_light_down_misp_encoded',
