@@ -28,7 +28,7 @@
   history: keep_last
   depth: 30
 
-/hires_front_small_encoded:
+/ircam/h264:
   reliability: reliable
   durability: volatile
   history: keep_last
