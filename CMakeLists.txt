@@ -133,7 +133,7 @@ target_link_libraries(voxl_h265_decoder
   PkgConfig::LIBAV)
 
 install(
-  TARGETS ${IR_NODE} voxl_h264_decoder voxl_h265_decoder # standalone
+  TARGETS voxl_h264_decoder voxl_h265_decoder # standalone
   DESTINATION lib/${PROJECT_NAME}
 )
 
