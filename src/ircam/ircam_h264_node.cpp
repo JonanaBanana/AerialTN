@@ -1,4 +1,5 @@
 #include "ircam/ircam_h264_node.hpp"
+#include <rmw/qos_profiles.h>
 
 namespace ir_v4l2_camera {
 
@@ -101,12 +102,18 @@ IrcamH264Republisher::IrcamH264Republisher(const rclcpp::NodeOptions& options) :
     RCLCPP_INFO(get_logger(),
         "Encoding %s → %s  [bitrate=%d, preset=%s]",
         in_topic.c_str(), out_topic.c_str(), bitrate_, preset_.c_str());
-
     image_raw_sub_ = create_subscription<sensor_msgs::msg::Image>(
         in_topic, rclcpp::SensorDataQoS(),
         std::bind(&IrcamH264Republisher::image_callback, this, std::placeholders::_1));
 
-        auto pub_qos = rclcpp::QoS(30).reliability(rclcpp::ReliabilityPolicy::Reliable).durability(rclcpp::DurabilityPolicy::Volatile);
+    rmw_qos_profile_t qos_profile  = rmw_qos_profile_default;
+    qos_profile.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+    qos_profile.durability  = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+
+    auto pub_qos = rclcpp::QoS(
+            rclcpp::QoSInitialization::from_rmw(qos_profile), qos_profile);
+
+    // auto pub_qos = rclcpp::QoS(30).reliability(rclcpp::ReliabilityPolicy::Reliable).durability(rclcpp::DurabilityPolicy::Volatile);
     // auto pub_qos = rclcpp::QoS(30).reliability(rclcpp::ReliabilityPolicy::Reliable).durability(rclcpp::DurabilityPolicy::TransientLocal);
     // auto pub_qos = rclcpp::QoS(10).reliability(rclcpp::ReliabilityPolicy::BestEffort).durability(rclcpp::DurabilityPolicy::Volatile);
     image_h264_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>(out_topic, pub_qos);
