@@ -43,6 +43,8 @@ sudo apt-get install freeglut3-dev libglew-dev -y
 
 sudo apt-get install libmetis-dev -y
 
+sudo apt-get install ninja-build -y
+
 sudo apt install unzip -y
 
 mkdir thirdparty
@@ -100,7 +102,7 @@ git clone --recursive https://github.com/stevenlovegrove/Pangolin.git
 
 cd Pangolin/
 
-sudo ./scripts/install_prerequisites.sh all
+sudo ./scripts/install_prerequisites.sh recommended
 
 cmake -B build
 

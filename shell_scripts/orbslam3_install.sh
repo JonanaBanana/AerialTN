@@ -3,7 +3,7 @@
 cd ~/thirdparty
 wait
 
-git clone https://github.com/zang09/ORB-SLAM3-STEREO-FIXED.git ORB_SLAM3
+git clone -b with_pango https://github.com/JonanaBanana/ORB-SLAM3-No-Pangolin.git ORB_SLAM3
 wait
 
 cd ORB_SLAM3/
