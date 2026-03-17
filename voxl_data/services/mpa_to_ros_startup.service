@@ -1,0 +1,16 @@
+[Unit]
+Description=Source ros2_ws and run voxl-mpa-to-ros2 node on boot.
+
+Wants=voxl-camera-service.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mpa_to_ros2_startup.sh
+Restart=on-failure
+RestartSec=3
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+
+

@@ -132,7 +132,10 @@ ament_target_dependencies(voxl_h265_decoder
 target_link_libraries(voxl_h265_decoder
   PkgConfig::LIBAV)
 
-
+install(
+  TARGETS voxl_h264_decoder voxl_h265_decoder # standalone
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # # Ircam H264 encoding republisher
 # add_executable(ircam_h264_enc
