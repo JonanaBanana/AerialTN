@@ -30,7 +30,7 @@ def generate_launch_description():
             cmd=[
                 'ros2', 'bag', 'record',
                 '--output', output_dir,
-                '--max-bag-size', '5000000000',
+                '--max-bag-duration', '30',
                 '--qos-profile-overrides-path', qos_override,
             ] + topics,
             output='screen',
