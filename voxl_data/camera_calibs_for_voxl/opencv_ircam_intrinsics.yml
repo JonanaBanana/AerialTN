@@ -1,0 +1,21 @@
+%YAML:1.0
+---
+M: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 761.968743, 0., 312.966397, 
+           0., 762.942798, 271.363729, 
+           0., 0., 1. ]
+D: !!opencv-matrix
+   rows: 5
+   cols: 1
+   dt: d
+   data: [ -0.454341, 0.318706,
+           -0.008568, 0.002462,
+            0.0 ]
+reprojection_error: 5.8460520260175519e-01
+width: 640
+height: 512
+distortion_model: plumb_bob
+calibration_time: "2026-03-03 11:26:08"
