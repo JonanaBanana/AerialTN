@@ -99,7 +99,7 @@ install(
 # target_include_directories(${IR_NODE} PUBLIC
 #   include
 # )
-# ament_target_dependencies(${IR_NODE}
+# ament_target_dependencies(${IR_NODE}ircam_component_node
 #   rclcpp
 #   sensor_msgs
 # )
