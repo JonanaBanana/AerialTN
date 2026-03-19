@@ -38,19 +38,8 @@ ament_target_dependencies(voxl_h264_decoder
 target_link_libraries(voxl_h264_decoder
   PkgConfig::LIBAV)
 
-# Build the h265 node
-add_executable(voxl_h265_decoder src/voxl_h265_decoder.cpp)
-
-ament_target_dependencies(voxl_h265_decoder
-  rclcpp
-  sensor_msgs
-)
-
-target_link_libraries(voxl_h265_decoder
-  PkgConfig::LIBAV)
-
 install(
-  TARGETS voxl_h264_decoder voxl_h265_decoder # standalone
+  TARGETS voxl_h264_decoder # standalone
   DESTINATION lib/${PROJECT_NAME}
 )
 
