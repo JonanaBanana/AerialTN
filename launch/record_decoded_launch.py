@@ -1,23 +1,23 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
+from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 import os
 from datetime import datetime
-from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
 
-    bag_name = 'voxlbag_encoded_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    # Timestamped output folder
+    bag_name = 'voxlbag_decoded_' + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     output_dir = os.path.join('/bagfiles', bag_name)
 
-    qos_override = os.path.join(
-        get_package_share_directory('aerial_tn'),
-        'config', 'qos_override.yaml')
-
     topics = [
-        '/low_light_down_misp_encoded',
-        '/tracking_down_misp_encoded',
-        '/tracking_front_misp_encoded',
+        '/low_light_down_misp_decoded',
+        '/tracking_down_misp_decoded',
+        '/tracking_front_misp_decoded',
+        '/hires_down_misp_decoded',
+        '/ircam/decoded',
         '/imu_apps',
+        '/imu_mavlink',
         '/fmu/out/vehicle_gps_position',
         '/fmu/out/vehicle_local_position',
         '/fmu/out/vehicle_odometry',
@@ -28,8 +28,7 @@ def generate_launch_description():
             cmd=[
                 'ros2', 'bag', 'record',
                 '--output', output_dir,
-                '--max-bag-size', '5000000000',
-                '--qos-profile-overrides-path', qos_override,
+                '--max-bag-size', '5000000000',   # 5GB bag size (splits bag when exceeding)
             ] + topics,
             output='screen',
             shell=False,

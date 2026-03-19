@@ -11,15 +11,16 @@ def generate_launch_description():
 
     qos_override = os.path.join(
         get_package_share_directory('aerial_tn'),
-        'config', 'qos_override_full_monty.yaml')
+        'config', 'qos_override.yaml')
 
     topics = [
         '/low_light_down_misp_encoded',
         '/tracking_down_misp_encoded',
         '/tracking_front_misp_encoded',
-        '/hires_front_misp_encoded',
+        '/hires_down_misp_encoded',
         '/ircam/h264',
         '/imu_apps',
+        '/imu_mavlink',
         '/fmu/out/vehicle_gps_position',
         '/fmu/out/vehicle_local_position',
         '/fmu/out/vehicle_odometry',
