@@ -41,18 +41,6 @@ def generate_launch_description():
                 'live_stream': False, 
                 'convert_to_bgr': True
             }]
-            ),
-        Node(
-            package='aerial_tn',
-            executable='voxl_h264_decoder',
-            name='decoder_tracking_front',
-            parameters=[{
-                'input_topic': '/hires_down_misp_encoded',
-                'output_topic': '/hires_down_misp_decoded',
-                'frame_id': 'hires_down',
-                'live_stream': False, 
-                'convert_to_bgr': True
-            }]
             )
     ])
     
