@@ -7,7 +7,7 @@ def generate_launch_description():
         Node(
             package='aerial_tn',
             executable='voxl_h264_decoder',
-            name='decoder_low_light_down',
+            name='decoder_low_light_down_node',
             parameters=[{
                 'input_topic': '/low_light_down_misp_encoded',
                 'output_topic': '/low_light_down_misp_decoded',
@@ -21,7 +21,7 @@ def generate_launch_description():
         Node(
             package='aerial_tn',
             executable='voxl_h264_decoder',
-            name='decoder_tracking_down',
+            name='decoder_tracking_down_node',
             parameters=[{
                 'input_topic': '/tracking_down_misp_encoded',
                 'output_topic': '/tracking_down_misp_decoded',
@@ -33,7 +33,7 @@ def generate_launch_description():
         Node(
             package='aerial_tn',
             executable='voxl_h264_decoder',
-            name='decoder_tracking_front',
+            name='decoder_tracking_front_node',
             parameters=[{
                 'input_topic': '/tracking_front_misp_encoded',
                 'output_topic': '/tracking_front_misp_decoded',
@@ -41,6 +41,11 @@ def generate_launch_description():
                 'live_stream': False, 
                 'convert_to_bgr': True
             }]
+            ),
+        Node(
+            package='ircam_decoder',
+            executable='ircam_decoder',
+            name='ircam_decoder_node'
             )
     ])
     
