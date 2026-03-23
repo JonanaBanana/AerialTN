@@ -47,9 +47,9 @@ def generate_launch_description():
             }]
             ),
         Node(
-            package='ircam_decoder',
-            executable='ircam_decoder',
-            name='ircam_decoder_node'
+            package='aerial_tn',
+            executable='voxl_ircam_decoder',
+            name='voxl_ircam_decoder_node'
             )
     ])
     

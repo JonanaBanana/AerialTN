@@ -39,15 +39,30 @@ target_link_libraries(voxl_h264_decoder
   PkgConfig::LIBAV)
 
 install(
-  TARGETS voxl_h264_decoder # standalone
+  TARGETS voxl_h264_decoder
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# General install...
-#install(
-#  DIRECTORY include/
-#  DESTINATION include
-#)
+# Build the ircam decoder node
+add_executable(voxl_ircam_decoder src/voxl_ircam_decoder.cpp)
+target_include_directories(voxl_ircam_decoder PRIVATE
+  ${AVCODEC_INCLUDE_DIRS}
+  ${AVUTIL_INCLUDE_DIRS}
+  ${SWSCALE_INCLUDE_DIRS}
+)
+ament_target_dependencies(voxl_ircam_decoder
+  rclcpp
+  sensor_msgs
+)
+target_link_libraries(voxl_ircam_decoder
+  PkgConfig::AVCODEC
+  PkgConfig::AVUTIL
+  PkgConfig::SWSCALE
+)
+install(TARGETS voxl_ircam_decoder
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}/
