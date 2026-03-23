@@ -3,7 +3,8 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 import os
 
-
+# We do not need to decode ircam here, as it is available from the v4l2 publisher
+# as a composed node. For offboard decoding, use AerialTN_Utility.
 def generate_launch_description():
     pkg_dir = get_package_share_directory('aerial_tn')
 
@@ -45,11 +46,6 @@ def generate_launch_description():
                 'live_stream': False, 
                 'convert_to_bgr': False
             }]
-            ),
-        Node(
-            package='aerial_tn',
-            executable='voxl_ircam_decoder',
-            name='voxl_ircam_decoder_node'
             )
     ])
     
