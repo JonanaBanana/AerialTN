@@ -1,0 +1,14 @@
+[Unit]
+Description=IRCAM stereo driver (H264 stream)
+After=local-fs.target iox-roudi.service
+Wants=iox-roudi.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ircam_startup.sh
+Restart=on-failure
+RestartSec=3
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
