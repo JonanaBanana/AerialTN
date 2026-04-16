@@ -1,0 +1,13 @@
+[Unit]
+Description=VOXL MPA to ROS2 with stable encoding
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mpa_to_ros_startup.sh
+Restart=on-failure
+RestartSec=3
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
