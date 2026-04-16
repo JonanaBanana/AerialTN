@@ -6,8 +6,8 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=/voxl_docker
-ExecStart=docker compose up
-ExecStop=docker compose down
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
 Restart=on-failure
 RestartSec=5
 
