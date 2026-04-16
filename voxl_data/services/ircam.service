@@ -1,14 +1,15 @@
 [Unit]
 Description=IRCAM stereo driver (H264 stream)
-After=local-fs.target iox-roudi.service
-Wants=iox-roudi.service
+After=docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/ircam_startup.sh
+WorkingDirectory=/voxl_docker
+ExecStart=docker compose up
+ExecStop=docker compose down
 Restart=on-failure
-RestartSec=3
-KillMode=process
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
