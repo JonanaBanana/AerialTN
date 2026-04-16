@@ -39,15 +39,10 @@ target_link_libraries(voxl_h264_decoder
   PkgConfig::LIBAV)
 
 install(
-  TARGETS voxl_h264_decoder # standalone
+  TARGETS voxl_h264_decoder
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# General install...
-#install(
-#  DIRECTORY include/
-#  DESTINATION include
-#)
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}/
