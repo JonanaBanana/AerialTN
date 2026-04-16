@@ -4,7 +4,7 @@ After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/mpa_to_ros_startup.sh
+ExecStart=/usr/local/bin/voxl_mpa_to_ros2_SE_startup.sh
 Restart=on-failure
 RestartSec=3
 KillMode=process
