@@ -226,6 +226,11 @@ private:
 
         if (needs_params_) return;
 
+        // SPS+PPS-only packets (no frame NALs) are already cached above.
+        // Sending them to the decoder produces no frame and triggers a spurious
+        // send error, so skip them here.
+        if (is_parameter_set_only(msg->data)) return;
+
         packets_received_++;
 
         // Backlog detection: only active for live WiFi streams.
@@ -348,6 +353,33 @@ private:
         frames_dropped_   = 0;
         packets_failed_   = 0;
         flush_count_      = 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // Returns true if the packet contains ONLY parameter set NALs (SPS/PPS)
+    // and no frame data (IDR/P/B-frames, NAL types 1 or 5).
+    // -----------------------------------------------------------------------
+    static bool is_parameter_set_only(const std::vector<uint8_t> & data)
+    {
+        bool has_params = false;
+        size_t i = 0;
+        while (i < data.size()) {
+            size_t sc_len = 0;
+            if (i + 3 < data.size() && data[i]==0 && data[i+1]==0 && data[i+2]==1)
+                sc_len = 3;
+            else if (i + 4 < data.size() && data[i]==0 && data[i+1]==0 && data[i+2]==0 && data[i+3]==1)
+                sc_len = 4;
+            else { ++i; continue; }
+
+            i += sc_len;
+            if (i >= data.size()) break;
+
+            const uint8_t nal = data[i] & 0x1F;
+            if (nal == 1 || nal == 5) return false;  // non-IDR slice or IDR slice
+            if (nal == 7 || nal == 8) has_params = true;
+            ++i;
+        }
+        return has_params;
     }
 
     // -----------------------------------------------------------------------
