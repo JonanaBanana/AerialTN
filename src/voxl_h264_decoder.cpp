@@ -226,11 +226,6 @@ private:
 
         if (needs_params_) return;
 
-        // SPS+PPS-only packets (no frame NALs) are already cached above.
-        // Sending them to the decoder produces no frame and triggers a spurious
-        // send error, so skip them here.
-        if (is_parameter_set_only(msg->data)) return;
-
         packets_received_++;
 
         // Backlog detection: only active for live WiFi streams.
@@ -266,9 +261,13 @@ private:
 
         int ret = avcodec_send_packet(codec_ctx_, &pkt);
         if (ret < 0) {
-            packets_failed_++;
-            if (++consecutive_errors_ >= kMaxConsecutiveErrors)
-                flush_and_restore_params();
+            // SPS+PPS-only packets may return an error (no decodable slice) —
+            // this is expected and not a real decode failure.
+            if (!is_parameter_set_only(msg->data)) {
+                packets_failed_++;
+                if (++consecutive_errors_ >= kMaxConsecutiveErrors)
+                    flush_and_restore_params();
+            }
             return;
         }
         consecutive_errors_ = 0;
