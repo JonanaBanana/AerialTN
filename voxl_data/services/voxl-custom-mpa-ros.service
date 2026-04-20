@@ -1,0 +1,19 @@
+[Unit]
+Description=VOXL MPA to ROS2 with stable encoding
+After=voxl-wait-for-fs.service voxl-camera-server.service voxl-streamer.service voxl-mavlink-server.service
+Requires=voxl-wait-for-fs.service voxl-camera-server.service voxl-streamer.service voxl-mavlink-server.service
+
+[Service]
+User=root
+Type=simple
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/local/bin/voxl-custom-mpa-ros.sh
+Restart=on-failure
+RestartSec=3
+StartLimitBurst=3
+StartLimitInterval=30
+KillMode=control-group
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
