@@ -24,6 +24,8 @@ def generate_launch_description():
         '/fmu/out/vehicle_gps_position',
         '/fmu/out/vehicle_local_position',
         '/fmu/out/vehicle_odometry',
+        '/alt_raw',
+        '/alt_smoothed'
     ]
 
     return LaunchDescription([
