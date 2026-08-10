@@ -1,7 +1,7 @@
 [Unit]
 Description=IRCAM stereo driver (H264 stream)
-After=docker.service voxl-wait-for-fs.service voxl-camera-server.service voxl-streamer.service
-Requires=docker.service voxl-wait-for-fs.service voxl-camera-server.service voxl-streamer.service 
+After=docker.service voxl-wait-for-fs.service voxl-camera-server.service
+Requires=docker.service voxl-wait-for-fs.service voxl-camera-server.service
  
 [Service]
 Type=simple

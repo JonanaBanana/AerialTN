@@ -1,5 +1,5 @@
 [Unit]
-Description=VOXL MPA to ROS2 with stable encoding
+Description=VOXL Lightware Lidar SF30-D
 After=voxl-wait-for-fs.service voxl-camera-server.service
 Requires=voxl-wait-for-fs.service voxl-camera-server.service
 
@@ -7,7 +7,7 @@ Requires=voxl-wait-for-fs.service voxl-camera-server.service
 User=root
 Type=simple
 ExecStartPre=/bin/sleep 10
-ExecStart=/usr/local/bin/voxl-custom-mpa-ros.sh
+ExecStart=/usr/local/bin/voxl-custom-lightwarelidar.sh
 Restart=on-failure
 RestartSec=3
 StartLimitBurst=3
