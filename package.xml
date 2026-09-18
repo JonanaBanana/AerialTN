@@ -2,7 +2,7 @@
 <package format="3">
  <name>aerial_tn</name>
  <version>0.1.0</version>
- <description>TODO: Package description</description>
+ <description>Drone-specific ROS2 code for the AerialTN project. Provides an H.264 decoder for VOXL camera streams and launch files for recording and decoding encoded video.</description>
  <maintainer email="202004778@post.au.dk">Jonathan Nielsen</maintainer>
  <license>Apache License</license>
 

@@ -22,11 +22,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(AVCODEC  REQUIRED IMPORTED_TARGET libavcodec)
-pkg_check_modules(AVUTIL   REQUIRED IMPORTED_TARGET libavutil)
-pkg_check_modules(SWSCALE  REQUIRED IMPORTED_TARGET libswscale)
-
 # Build the h264 node
 add_executable(voxl_h264_decoder src/voxl_h264_decoder.cpp)
 
