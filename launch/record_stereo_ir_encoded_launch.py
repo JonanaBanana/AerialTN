@@ -21,11 +21,14 @@ def generate_launch_description():
         '/ircam_wide/h264',
         '/imu_apps',
         '/imu_mavlink',
-        '/fmu/out/vehicle_gps_position',
-        '/fmu/out/vehicle_local_position',
         '/fmu/out/vehicle_odometry',
+        '/vvhub_aligned_vio',
         '/alt_raw',
-        '/alt_smoothed'
+        '/alt_smoothed',
+        '/px4/baro/altitude',
+	    '/px4/baro/pressure',
+	    '/px4/baro/temperature',
+	    '/px4/mag'
     ]
 
     return LaunchDescription([

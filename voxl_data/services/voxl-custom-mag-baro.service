@@ -1,0 +1,19 @@
+[Unit]
+Description=PX4 mag/baro (MAVLink HIGHRES_IMU) to ROS2
+After=voxl-wait-for-fs.service voxl-px4.service
+Requires=voxl-wait-for-fs.service
+
+[Service]
+User=root
+Type=simple
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/local/bin/voxl-custom-mag-baro.sh
+Restart=on-failure
+RestartSec=3
+StartLimitBurst=3
+StartLimitInterval=30
+KillMode=control-group
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
