@@ -22,6 +22,7 @@ def generate_launch_description():
         '/imu_apps',
         '/imu_mavlink',
         '/fmu/out/vehicle_odometry',
+        '/fmu/out/vehicle_gps_position',
         '/vvhub_aligned_vio',
         '/alt_raw',
         '/alt_smoothed',

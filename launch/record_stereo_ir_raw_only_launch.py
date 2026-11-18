@@ -14,6 +14,7 @@ def generate_launch_description():
         '/ircam_wide/raw_image',
         '/imu_apps',
         '/fmu/out/vehicle_odometry',
+        '/fmu/out/vehicle_gps_position',
         '/vvhub_aligned_vio',
         '/alt_raw',
         '/alt_smoothed',

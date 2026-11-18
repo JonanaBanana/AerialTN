@@ -1,20 +1,19 @@
 [Unit]
-Description=IRCAM stereo driver (H264 stream)
-After=docker.service voxl-wait-for-fs.service voxl-camera-server.service
-Requires=docker.service voxl-wait-for-fs.service voxl-camera-server.service
- 
+Description=IRCAM stereo driver (raw + H264 stream)
+After=voxl-wait-for-fs.service
+Requires=voxl-wait-for-fs.service
+
 [Service]
+User=root
 Type=simple
-WorkingDirectory=/voxl_docker
 ExecStartPre=/bin/sleep 10
-ExecStart=/usr/bin/docker compose up
-ExecStop=/usr/bin/docker compose down
+ExecStart=/usr/local/bin/voxl-custom-ircam.sh
 Restart=on-failure
-RestartSec=5
+RestartSec=3
 StartLimitBurst=3
 StartLimitInterval=30
+KillMode=control-group
 TimeoutStopSec=5
-
 
 [Install]
 WantedBy=multi-user.target
